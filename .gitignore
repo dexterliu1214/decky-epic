@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+*.log
+.DS_Store
+
+# Vendored python deps are committed deliberately (shipped with the plugin),
+# but build/test artifacts are not:
+__pycache__/
+*.pyc
+.venv/
+.devstate/
+.smoke/

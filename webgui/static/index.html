@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>decky-epic — Epic Games (Windows)</title>
+<style>
+  :root { --bg:#0e1116; --panel:#171b22; --panel2:#1f2530; --accent:#4f8cff; --text:#e6e9ef; --muted:#8b93a3; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:var(--bg); color:var(--text); }
+  a { color:var(--accent); }
+  header { position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:14px;
+           padding:12px 20px; background:linear-gradient(#11151c,#0e1116); border-bottom:1px solid #232a35; }
+  header h1 { font-size:18px; margin:0; letter-spacing:.5px; }
+  header .spacer { flex:1; }
+  .pill { font-size:12px; color:var(--muted); }
+  button { background:var(--panel2); color:var(--text); border:1px solid #2c3442; border-radius:6px;
+           padding:8px 12px; cursor:pointer; font-size:13px; }
+  button:hover { background:#283041; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary:hover { filter:brightness(1.1); }
+  button:disabled { opacity:.5; cursor:default; }
+  input, select { background:#0c0f14; color:var(--text); border:1px solid #2c3442; border-radius:6px; padding:8px 10px; font-size:13px; }
+  .toolbar { display:flex; gap:10px; align-items:center; padding:14px 20px; }
+  .toolbar input[type=text]{ flex:1; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:16px; padding:0 20px 40px; }
+  .card { background:var(--panel); border-radius:8px; overflow:hidden; cursor:pointer; position:relative;
+          box-shadow:0 2px 10px rgba(0,0,0,.4); transition:transform .08s,box-shadow .08s; }
+  .card:hover { transform:translateY(-3px); box-shadow:0 6px 18px rgba(0,0,0,.55); }
+  .card .cover { width:100%; aspect-ratio:3/4; object-fit:cover; display:block; background:#10141b; }
+  .card .nocover { width:100%; aspect-ratio:3/4; display:flex; align-items:center; justify-content:center;
+                   text-align:center; padding:10px; font-size:13px; color:var(--muted); }
+  .card .title { padding:6px 8px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .badge { position:absolute; top:6px; left:6px; min-width:26px; height:26px; padding:0 6px; border-radius:4px;
+           display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:#fff; }
+  .flags { position:absolute; top:6px; right:6px; display:flex; gap:5px; font-size:12px; }
+  .chip { background:rgba(0,0,0,.6); border-radius:4px; padding:1px 5px; }
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:50; }
+  .overlay.show { display:flex; }
+  .modal { background:var(--panel); width:min(720px,92vw); max-height:88vh; overflow:auto; border-radius:12px; padding:22px; }
+  .modal h2 { margin:0 0 4px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .section { background:var(--panel2); border-radius:8px; padding:14px; margin-top:16px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .progress { height:10px; background:#0c0f14; border-radius:6px; overflow:hidden; margin:8px 0; }
+  .progress > div { height:100%; background:var(--accent); width:0%; transition:width .4s; }
+  .attribution { color:var(--muted); font-size:11px; padding:10px 20px 24px; }
+  .field { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+  .toast { position:fixed; bottom:18px; right:18px; background:#222a36; border:1px solid #36405180;
+           padding:10px 14px; border-radius:8px; z-index:80; font-size:13px; opacity:0; transition:opacity .2s; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎮 decky-epic</h1>
+  <span class="pill" id="authPill">…</span>
+  <div class="spacer"></div>
+  <span class="pill" id="opPill"></span>
+  <button id="loginBtn">Sign in</button>
+  <button id="settingsBtn">Settings</button>
+  <button id="refreshBtn" title="Reload library">⟳</button>
+</header>
+
+<div class="toolbar">
+  <input type="text" id="search" placeholder="Search games…" />
+  <select id="sort">
+    <option value="metacritic">Metacritic ↓</option>
+    <option value="title">Title A–Z</option>
+    <option value="installed">Installed first</option>
+  </select>
+</div>
+
+<div id="grid" class="grid"></div>
+<div class="attribution">Critic scores provided by <a href="https://rawg.io" target="_blank">RAWG</a>.</div>
+
+<!-- Detail modal -->
+<div class="overlay" id="detailOverlay">
+  <div class="modal" id="detailModal"></div>
+</div>
+<!-- Login modal -->
+<div class="overlay" id="loginOverlay">
+  <div class="modal">
+    <h2>Sign in to Epic Games</h2>
+    <p class="muted">1. Open this URL, sign in, then copy the <code>authorizationCode</code> (or the whole JSON):</p>
+    <p><a id="loginUrl" href="#" target="_blank"></a></p>
+    <div class="field"><input type="text" id="authCode" placeholder="authorizationCode or JSON" /></div>
+    <div class="row">
+      <button class="primary" id="authSubmit">Sign in</button>
+      <button id="loginClose">Cancel</button>
+    </div>
+  </div>
+</div>
+<!-- Settings modal -->
+<div class="overlay" id="settingsOverlay">
+  <div class="modal">
+    <h2>Settings</h2>
+    <div class="field"><label class="muted">RAWG API key (rawg.io/apidocs)</label><input type="text" id="setRawg" /></div>
+    <div class="field"><label class="muted">Install base path</label><input type="text" id="setPath" /></div>
+    <div class="row">
+      <button class="primary" id="settingsSave">Save</button>
+      <button id="settingsClose">Close</button>
+      <button id="logoutBtn">Sign out</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

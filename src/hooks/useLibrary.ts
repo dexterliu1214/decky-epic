@@ -1,0 +1,49 @@
+import { useCallback, useEffect, useState } from "react";
+import { getCachedScores, listLibrary, refreshScores, subscribe } from "../api";
+import { setLibraryCache } from "../state/libraryCache";
+import type { GameSummary } from "../types";
+
+export function useLibrary() {
+  const [games, setGames] = useState<GameSummary[]>([]);
+  const [scores, setScores] = useState<Record<string, number | null>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async (forceLibrary = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const lib = await listLibrary(forceLibrary);
+      setGames(lib);
+      const appNames = lib.map((g) => g.app_name);
+      const cached = await getCachedScores(appNames);
+      const map: Record<string, number | null> = {};
+      for (const [k, v] of Object.entries(cached)) map[k] = v.metacritic;
+      setScores(map);
+      // Kick a throttled background refresh; scores update live via events.
+      void refreshScores(lib.map((g) => ({ app_name: g.app_name, title: g.title })), false);
+    } catch (e) {
+      setError(`${e}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load(false);
+  }, [load]);
+
+  useEffect(() => {
+    const off = subscribe<{ app_name: string; metacritic: number | null }>(
+      "epic_rawg_progress",
+      (p) => setScores((prev) => ({ ...prev, [p.app_name]: p.metacritic })),
+    );
+    return off;
+  }, []);
+
+  useEffect(() => {
+    setLibraryCache(games, scores);
+  }, [games, scores]);
+
+  return { games, scores, loading, error, reload: load, setGames };
+}
