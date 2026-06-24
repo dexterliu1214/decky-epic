@@ -10,7 +10,7 @@ import { LIBRARY_ROUTE } from "../routes";
 import type { ProtonBuild } from "../types";
 
 export function SettingsPage() {
-  const { status, finish, logout } = useAuth();
+  const { status, finish, logout, refresh } = useAuth();
   const { settings, save } = useSettings();
   const [submitting, setSubmitting] = useState(false);
   const [protons, setProtons] = useState<ProtonBuild[]>([]);
@@ -54,7 +54,14 @@ export function SettingsPage() {
             <DialogButton style={{ width: 140 }} onClick={() => logout()}>Sign out</DialogButton>
           </Focusable>
         ) : (
-          <AuthDialog onSubmit={onAuth} submitting={submitting} />
+          <AuthDialog
+            onSubmit={onAuth}
+            submitting={submitting}
+            onSuccess={() => {
+              toaster.toast({ title: "Signed in", body: "Epic account linked from your phone" });
+              void refresh();
+            }}
+          />
         )}
       </section>
 

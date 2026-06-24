@@ -4,6 +4,9 @@ out/
 *.log
 .DS_Store
 
+# Packaged release artifacts (built via scripts/build_zip.sh):
+decky-epic-v*.zip
+
 # Vendored python deps are committed deliberately (shipped with the plugin),
 # but build/test artifacts are not:
 __pycache__/

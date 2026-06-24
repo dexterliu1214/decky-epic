@@ -19,6 +19,11 @@ export const authLoginUrl = callable<[], string>("auth_login_url");
 export const authStatus = callable<[], AuthStatus>("auth_status");
 export const authFinish = callable<[string], { ok: boolean; user?: string | null; error?: string }>("auth_finish");
 export const authLogout = callable<[], { ok: boolean; error?: string }>("auth_logout");
+export const authStartPairing =
+  callable<[], { ok: boolean; url?: string; host?: string; port?: number; token?: string; error?: string }>(
+    "auth_start_pairing",
+  );
+export const authStopPairing = callable<[], { ok: boolean }>("auth_stop_pairing");
 
 // --- library ---------------------------------------------------------------
 export const listLibrary = callable<[boolean], GameSummary[]>("list_library");

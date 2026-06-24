@@ -30,6 +30,8 @@ class Plugin:
     rawg: RawgService | None = None
     saves: SavesService | None = None
     launcher: LaunchService | None = None
+    _loop: asyncio.AbstractEventLoop | None = None
+    _pairing = None  # epic.pairing.PairingServer | None
 
     # --- lifecycle -----------------------------------------------------------
     async def _main(self) -> None:
@@ -45,6 +47,7 @@ class Plugin:
             decky.logger.exception("decky-epic: failed to init legendary core")
 
         loop = asyncio.get_running_loop()
+        self._loop = loop
         self.rawg = RawgService(self.settings)
         if self.core:
             self.downloads = DownloadService(self.core, loop, decky.emit)
@@ -53,6 +56,8 @@ class Plugin:
 
     async def _unload(self) -> None:
         decky.logger.info("decky-epic: backend unloading")
+        if self._pairing:
+            self._pairing.stop()
         if self.downloads:
             self.downloads.shutdown()
         if self.rawg:
@@ -88,6 +93,34 @@ class Plugin:
         if not self.core:
             return {"ok": False, "error": self.core_error or "backend not ready"}
         return await self.core.logout()
+
+    # --- phone-assisted login (LAN pairing) ----------------------------------
+    def _pair_submit(self, payload: str) -> dict:
+        """Called from the pairing server's worker thread; marshals the code
+        exchange onto the plugin event loop where legendary lives."""
+        if not self.core or self._loop is None:
+            return {"ok": False, "error": self.core_error or "backend not ready"}
+        fut = asyncio.run_coroutine_threadsafe(self.core.finish_auth(payload), self._loop)
+        return fut.result(timeout=90)
+
+    async def auth_start_pairing(self) -> dict:
+        """Start (or refresh) the LAN companion server and return the QR target."""
+        if not self.core:
+            return {"ok": False, "error": self.core_error or "backend not ready"}
+        try:
+            from epic.pairing import PairingServer
+            if self._pairing is None:
+                self._pairing = PairingServer(self._pair_submit, EpicCore.login_url())
+            info = self._pairing.start()
+            return {"ok": True, **info}
+        except Exception as e:
+            decky.logger.exception("decky-epic: failed to start pairing server")
+            return {"ok": False, "error": f"{e}"}
+
+    async def auth_stop_pairing(self) -> dict:
+        if self._pairing:
+            self._pairing.stop()
+        return {"ok": True}
 
     # --- library -------------------------------------------------------------
     async def list_library(self, force_refresh: bool = False) -> list[dict]:

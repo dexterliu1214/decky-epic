@@ -18,7 +18,7 @@ remaining step — see *Testing on a Steam Deck* below.
 
 - **M0** Scaffold (build + empty plugin loads) ✅
 - **M1** Vendor legendary + backend boot ✅
-- **M2** Epic auth (SSO + paste authorization code) ✅ *(impl)*
+- **M2** Epic auth (phone-assisted QR + paste authorization code) ✅ *(impl)*
 - **M3** Library list + RAWG Metacritic scores/sort ✅ *(impl)*
 - **M4** Download with Steam-like progress ✅ *(impl)*
 - **M5** Proton discovery + launch ✅ *(impl)*
@@ -67,6 +67,28 @@ also drive the backend interactively against your own Epic account on Windows
 .venv\Scripts\python.exe scripts\devtools\dev_harness.py rawg <RAWG_KEY> "Hades" "Control"
 ```
 
+## Signing in to Epic
+
+Opening a browser and pasting a long code with the on-screen keyboard is painful
+in Game Mode, so the default sign-in is **phone-assisted** — nothing is typed or
+browsed on the Deck:
+
+1. Open Decky → Epic → Settings. The **Epic Account** section shows a **QR code**.
+2. Scan it with your phone (phone and Deck must be on the **same Wi-Fi**). It
+   opens a small page served by the plugin on the Deck.
+3. On the phone: tap **Open Epic login**, sign in, then **copy** the JSON blob
+   Epic shows, **paste** it back on that page, and tap **Send to Deck**.
+4. The Deck exchanges the code and flips to *Signed in as …* automatically.
+
+How it works: the backend runs a token-protected LAN server (stdlib only,
+`py_modules/epic/pairing.py`, port `9988`+) that the QR points at; the phone POSTs
+the authorization code back and the Deck never has to type it. The authorization
+code is single-use and expires within minutes, so paste-and-send promptly.
+
+A **Manual sign-in (desktop)** fallback is tucked under the QR for when you have a
+real browser: open `legendary.gl/epiclogin`, sign in, and paste the
+`authorizationCode` (or the whole JSON) directly into the panel.
+
 ## Testing on a Steam Deck
 
 1. `bash scripts/vendor_backend.sh` — (re)vendor the Linux backend deps (already done once).
@@ -89,3 +111,17 @@ pnpm run build      # produces dist/ ; the decky CLI packages dist + main.py + p
 
 Deploy to a Steam Deck running Decky in Developer Mode by copying the built
 output into `~/homebrew/plugins/decky-epic` (see the Decky docs).
+
+### Packaging a release zip
+
+`scripts/build_zip.sh` builds the frontend and produces a Decky-installable
+`decky-epic-v<version>.zip` (a single `decky-epic/` folder with `dist`, `main.py`,
+`py_modules`, `defaults`, `assets`; dev artifacts and source maps excluded):
+
+```bash
+bash scripts/build_zip.sh            # writes ./decky-epic-v<version>.zip
+OUT_DIR=/path/to/out bash scripts/build_zip.sh
+```
+
+Install it on the Deck via Decky's **Install from ZIP** (Developer Mode) or by
+unpacking it into `~/homebrew/plugins/`.
