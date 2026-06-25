@@ -1,25 +1,22 @@
 """Download orchestration.
 
-legendary's ``DLManager`` is a ``multiprocessing.Process`` that streams
-``UIUpdate`` status objects into a queue. We:
+The actual transfer runs in an isolated subprocess (``download_cli.py``) rather
+than as a ``multiprocessing.Process`` forked from the plugin host: legendary's
+``DLManager`` fork disturbed Decky's plugin IPC and the plugin was unloaded the
+instant the download finished, so the install never reached installed.json and
+the UI hung at 100%. Launching a clean child via ``create_subprocess_exec``
+(close_fds) keeps every legendary fork away from Decky's file descriptors.
 
-  1. call ``core.prepare_download`` briefly under the shared core lock to obtain
-     the manager + analysis + InstalledGame, then
-  2. run the actual transfer on a *dedicated* thread so the long-lived download
-     never holds the core lock (auth / library calls stay responsive), and
-  3. finalize with ``core.install_game`` (writes installed.json) back under the
-     core lock.
-
-Progress is pushed to the frontend via the injected ``emit`` coroutine.
+We read newline-delimited JSON progress from the child's stdout and re-emit the
+frontend events.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-import multiprocessing as mp
-import queue as queue_mod
-import threading
-import time
+import os
+import sys
 from typing import Awaitable, Callable, Optional
 
 from . import paths
@@ -31,15 +28,17 @@ EmitFn = Callable[[str, dict], Awaitable[None]]
 EVT_PROGRESS = "epic_download_progress"
 EVT_STATE = "epic_download_state"
 
+_CLI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "download_cli.py")
+
 
 class DownloadService:
     def __init__(self, epic_core, loop: asyncio.AbstractEventLoop, emit: EmitFn) -> None:
         self.epic = epic_core
         self.loop = loop
         self.emit = emit
-        self._thread: Optional[threading.Thread] = None
-        self._dlm = None
-        self._cancel = threading.Event()
+        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._task: Optional[asyncio.Task] = None
+        self._app: Optional[str] = None
         self._current: Optional[dict] = None  # public status snapshot
 
     # -- public API ----------------------------------------------------------
@@ -47,60 +46,40 @@ class DownloadService:
         return self._current
 
     def is_busy(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
+        return self._proc is not None and self._proc.returncode is None
 
     async def start(self, app_name: str, base_path: str = "", max_workers: int = 0) -> dict:
         if self.is_busy():
             return {"ok": False, "error": "A download is already in progress."}
 
-        status_q: mp.Queue = mp.Queue()
         base = base_path or str(paths.DEFAULT_INSTALL_DIR)
-
-        def _prepare():
-            core = self.epic.core
-            try:
-                core.login()
-            except Exception as e:
-                _log.warning("login before download failed: %r", e)
-            game = core.get_game(app_name, update_meta=True)
-            if not game:
-                raise ValueError(f"Game not found: {app_name}")
-            dlm, analysis, igame = core.prepare_download(
-                game=game, base_path=base, status_q=status_q,
-                max_workers=max_workers, platform="Windows",
-            )
-            return game, dlm, analysis, igame
-
+        argv = [sys.executable, _CLI, app_name, "--base", base, "--workers", str(int(max_workers or 0))]
         try:
-            game, dlm, analysis, igame = await self.epic.run(_prepare)
+            proc = await asyncio.create_subprocess_exec(
+                *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
         except Exception as e:
-            _log.exception("prepare_download failed")
+            _log.exception("failed to launch download subprocess")
             return {"ok": False, "error": f"{e}"}
 
-        self._dlm = dlm
-        self._cancel.clear()
+        self._proc = proc
+        self._app = app_name
         self._current = {
-            "app_name": app_name,
-            "title": getattr(game, "app_title", app_name),
-            "state": "downloading",
-            "progress": 0.0,
-            "download_speed": 0.0,
-            "dl_total_bytes": int(getattr(analysis, "dl_size", 0) or 0),
-            "downloaded_bytes": 0,
-            "eta_seconds": None,
+            "app_name": app_name, "title": app_name, "state": "downloading",
+            "progress": 0.0, "download_speed": 0.0, "dl_total_bytes": 0,
+            "downloaded_bytes": 0, "eta_seconds": None,
         }
-        self._thread = threading.Thread(
-            target=self._run, args=(app_name, dlm, analysis, igame, status_q),
-            name=f"epic-dl-{app_name}", daemon=True,
-        )
-        self._thread.start()
+        self._task = asyncio.create_task(self._pump(app_name, proc))
         await self.emit(EVT_STATE, {"app_name": app_name, "state": "downloading"})
         return {"ok": True}
 
     async def cancel(self, app_name: str) -> dict:
-        if not self.is_busy() or not self._current or self._current["app_name"] != app_name:
+        if not self.is_busy() or self._app != app_name or self._proc is None:
             return {"ok": False, "error": "No matching active download."}
-        self._cancel.set()
+        try:
+            self._proc.terminate()
+        except Exception as e:
+            return {"ok": False, "error": f"{e}"}
         return {"ok": True}
 
     async def uninstall(self, app_name: str) -> dict:
@@ -115,93 +94,69 @@ class DownloadService:
         return await self.epic.run(_do)
 
     def shutdown(self) -> None:
-        self._cancel.set()
-        if self._dlm is not None:
+        if self._proc is not None and self._proc.returncode is None:
             try:
-                if self._dlm.is_alive():
-                    self._dlm.terminate()
+                self._proc.terminate()
             except Exception:
                 pass
 
-    # -- worker thread -------------------------------------------------------
-    def _emit_threadsafe(self, event: str, payload: dict) -> None:
+    # -- subprocess pump -----------------------------------------------------
+    async def _pump(self, app_name: str, proc: asyncio.subprocess.Process) -> None:
+        dl_total = 0
+        assert proc.stdout is not None
         try:
-            asyncio.run_coroutine_threadsafe(self.emit(event, payload), self.loop)
+            async for raw in proc.stdout:
+                try:
+                    msg = json.loads(raw.decode("utf-8", "replace").strip())
+                except Exception:
+                    continue
+                kind = msg.get("type")
+                if kind == "start":
+                    dl_total = int(msg.get("dl_total_bytes") or 0)
+                    if self._current:
+                        self._current["title"] = msg.get("title") or app_name
+                        self._current["dl_total_bytes"] = dl_total
+                elif kind == "progress":
+                    perc = float(msg.get("progress") or 0.0)
+                    speed = float(msg.get("download_speed") or 0.0)
+                    downloaded = int(dl_total * perc / 100.0) if dl_total else 0
+                    eta = max(0, int((dl_total - downloaded) / speed)) if (speed > 0 and dl_total) else None
+                    snap = {
+                        "app_name": app_name, "state": "downloading",
+                        "progress": round(perc, 2), "download_speed": speed,
+                        "dl_total_bytes": dl_total, "downloaded_bytes": downloaded,
+                        "eta_seconds": eta, "current_filename": msg.get("current_filename"),
+                    }
+                    self._current = snap
+                    await self.emit(EVT_PROGRESS, snap)
+                elif kind == "done":
+                    await self._finish(app_name, "done")
+                    break
+                elif kind == "error":
+                    await self._finish(app_name, "error", error=msg.get("error"))
+                    break
         except Exception as e:
-            _log.warning("emit %s failed: %r", event, e)
+            _log.exception("download pump failed")
+            await self._finish(app_name, "error", error=f"{e}")
 
-    def _run(self, app_name, dlm, analysis, igame, status_q: mp.Queue) -> None:
-        dl_total = int(getattr(analysis, "dl_size", 0) or 0)
-        try:
-            dlm.start()
-        except Exception as e:
-            _log.exception("dlm.start failed")
-            self._finish(app_name, "error", error=f"{e}")
-            return
+        rc = await proc.wait()
+        # If the child died without a terminal message, reconcile the state.
+        if self._current and self._current.get("state") == "downloading":
+            if rc == 130:
+                await self._finish(app_name, "cancelled")
+            else:
+                stderr = b""
+                try:
+                    stderr = await proc.stderr.read() if proc.stderr else b""
+                except Exception:
+                    pass
+                await self._finish(app_name, "error",
+                                   error=stderr.decode("utf-8", "replace")[-500:] or f"exit code {rc}")
 
-        while dlm.is_alive():
-            if self._cancel.is_set():
-                break
-            try:
-                upd = status_q.get(timeout=1.0)
-            except queue_mod.Empty:
-                continue
-            except Exception:
-                continue
-            perc = float(getattr(upd, "progress", 0.0) or 0.0)
-            speed = float(getattr(upd, "download_speed", 0.0) or 0.0)
-            downloaded = int(dl_total * perc / 100.0) if dl_total else 0
-            eta = None
-            if speed > 0 and dl_total:
-                eta = max(0, int((dl_total - downloaded) / speed))
-            snap = {
-                "app_name": app_name,
-                "state": "downloading",
-                "progress": round(perc, 2),
-                "download_speed": speed,
-                "dl_total_bytes": dl_total,
-                "downloaded_bytes": downloaded,
-                "eta_seconds": eta,
-                "current_filename": getattr(upd, "current_filename", None),
-            }
-            self._current = snap
-            self._emit_threadsafe(EVT_PROGRESS, snap)
-
-        if self._cancel.is_set():
-            try:
-                dlm.terminate()
-            except Exception:
-                pass
-            try:
-                dlm.join(timeout=10)
-            except Exception:
-                pass
-            self._finish(app_name, "cancelled")
-            return
-
-        try:
-            dlm.join()
-        except Exception as e:
-            _log.warning("dlm.join error: %r", e)
-
-        # Finalize install (write installed.json) under the core lock.
-        try:
-            fut = asyncio.run_coroutine_threadsafe(
-                self.epic.run(self.epic.core.install_game, igame), self.loop
-            )
-            fut.result(timeout=120)
-        except Exception as e:
-            _log.exception("install_game finalize failed")
-            self._finish(app_name, "error", error=f"{e}")
-            return
-
-        self._finish(app_name, "done")
-
-    def _finish(self, app_name: str, state: str, error: Optional[str] = None) -> None:
+    async def _finish(self, app_name: str, state: str, error: Optional[str] = None) -> None:
         payload = {"app_name": app_name, "state": state}
         if error:
             payload["error"] = error
         if self._current and self._current.get("app_name") == app_name:
             self._current = {**self._current, **payload}
-        self._dlm = None
-        self._emit_threadsafe(EVT_STATE, payload)
+        await self.emit(EVT_STATE, payload)
