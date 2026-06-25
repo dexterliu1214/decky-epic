@@ -26,7 +26,16 @@ sync() {  # $1 = pull|push
 }
 
 sync pull
-"$@"            # run the game (blocks until it exits)
+
+# Fresh Epic launch args (so EOS games use the Epic account + save folder).
+# Generated right before launch — the -AUTH_PASSWORD exchange code is
+# single-use and short-lived.
+EPIC_ARGS=()
+if [ -n "$APP" ] && [ -n "$PY" ]; then
+  mapfile -t EPIC_ARGS < <("$PY" "$HERE/epic_launch_args.py" "$APP" 2>/dev/null) || EPIC_ARGS=()
+fi
+
+"$@" "${EPIC_ARGS[@]}"   # run the game with Epic args (blocks until it exits)
 status=$?
 sync push
 exit "$status"
