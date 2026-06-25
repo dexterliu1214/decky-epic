@@ -97,6 +97,18 @@ class DownloadService:
             return {"ok": False, "error": f"{e}"}
         return {"ok": True}
 
+    def _reload_installed_blocking(self) -> None:
+        """Re-read installed.json into the plugin's legendary core so a download
+        finalized in the subprocess is visible to get_installed_game/list."""
+        lgd = self.epic.core.lgd
+        try:
+            with open(os.path.join(lgd.path, "installed.json"), "r", encoding="utf-8") as f:
+                lgd._installed = json.load(f)
+        except FileNotFoundError:
+            lgd._installed = {}
+        except Exception as e:
+            _log.warning("reload installed.json failed: %r", e)
+
     async def uninstall(self, app_name: str) -> dict:
         def _do():
             core = self.epic.core
@@ -145,6 +157,14 @@ class DownloadService:
                     self._current = snap
                     await self.emit(EVT_PROGRESS, snap)
                 elif kind == "done":
+                    # The install was written to installed.json by the isolated
+                    # subprocess; the plugin's own legendary core still has a
+                    # stale in-memory copy, so reload it before anyone calls
+                    # get_installed_game (Play / Uninstall would otherwise fail).
+                    try:
+                        await self.epic.run(self._reload_installed_blocking)
+                    except Exception as e:
+                        _log.warning("reload installed after download failed: %r", e)
                     await self._finish(app_name, "done")
                     break
                 elif kind == "error":

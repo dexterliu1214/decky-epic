@@ -59,6 +59,8 @@ def main() -> int:
     from epic import paths
     paths.apply_legendary_env()
     from legendary.core import LegendaryCore
+    from epic.legendary_lock import apply_installed_json_locking
+    apply_installed_json_locking()
 
     core = LegendaryCore()
     try:

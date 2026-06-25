@@ -49,6 +49,8 @@ class EpicCore:
         # Imported lazily, AFTER the config env var is set, and after vendored
         # deps are on sys.path (Decky adds py_modules automatically).
         from legendary.core import LegendaryCore
+        from .legendary_lock import apply_installed_json_locking
+        apply_installed_json_locking()  # cross-process-safe installed.json writes
 
         self._core = LegendaryCore()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="legendary")
