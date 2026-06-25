@@ -1,7 +1,20 @@
+import type { CSSProperties } from "react";
 import { Focusable } from "@decky/ui";
 import { FaCloud, FaDownload } from "react-icons/fa";
 import type { GameSummary } from "../types";
 import { MetacriticBadge } from "./MetacriticBadge";
+
+// Dark rounded backing so the white/blue icons stay legible on light covers.
+const badgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 20,
+  height: 20,
+  borderRadius: 5,
+  background: "rgba(0,0,0,0.65)",
+  color: "#fff",
+};
 
 export function GameCard({
   game,
@@ -54,8 +67,16 @@ export function GameCard({
           <MetacriticBadge score={score} />
         </div>
         <div style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 4 }}>
-          {game.installed && <FaDownload size={14} title="Installed" />}
-          {game.cloud_saves && <FaCloud size={14} title="Cloud saves supported" />}
+          {game.installed && (
+            <span style={badgeStyle} title="Installed">
+              <FaDownload size={12} />
+            </span>
+          )}
+          {game.cloud_saves && (
+            <span style={{ ...badgeStyle, color: "#4aa3ff" }} title="Cloud saves supported">
+              <FaCloud size={12} />
+            </span>
+          )}
         </div>
       </div>
       <div

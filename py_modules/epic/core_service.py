@@ -10,12 +10,18 @@ import asyncio
 import functools
 import json
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Optional
 
 from . import paths
 
 _log = logging.getLogger("decky-epic.core")
+
+# Persisted library snapshot so opening the library is instant instead of a
+# ~10s network round-trip every time. The "installed" flag is re-overlaid live
+# from the local installed list, so only purchases/removals need a refresh.
+LIBRARY_CACHE_FILE = paths.CACHE_DIR / "library.json"
 
 EPIC_LOGIN_URL = "https://legendary.gl/epiclogin"
 
@@ -128,22 +134,56 @@ class EpicCore:
             "categories": [c.get("path") for c in (md.get("categories") or [])],
         }
 
-    async def library(self, force_refresh: bool = False) -> list[dict]:
-        def _list() -> list[dict]:
-            try:
-                self._core.login()
-            except Exception as e:
-                _log.warning("login during library fetch failed: %r", e)
-            games = self._core.get_game_list(update_assets=True)
-            installed = {ig.app_name for ig in self._core.get_installed_list()}
-            out = []
-            for g in games:
-                s = self._game_summary(g)
-                s["installed"] = g.app_name in installed
-                out.append(s)
-            return out
+    def _fetch_library_blocking(self) -> list[dict]:
+        try:
+            self._core.login()
+        except Exception as e:
+            _log.warning("login during library fetch failed: %r", e)
+        games = self._core.get_game_list(update_assets=True)
+        installed = {ig.app_name for ig in self._core.get_installed_list()}
+        out = []
+        for g in games:
+            s = self._game_summary(g)
+            s["installed"] = g.app_name in installed
+            out.append(s)
+        return out
 
-        return await self.run(_list)
+    def _overlay_installed_blocking(self, games: list[dict]) -> list[dict]:
+        try:
+            installed = {ig.app_name for ig in self._core.get_installed_list()}
+            for g in games:
+                g["installed"] = g["app_name"] in installed
+        except Exception as e:
+            _log.warning("installed overlay failed: %r", e)
+        return games
+
+    @staticmethod
+    def _read_library_cache() -> Optional[list[dict]]:
+        try:
+            with open(LIBRARY_CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f).get("games")
+        except Exception:
+            return None
+
+    @staticmethod
+    def _write_library_cache(games: list[dict]) -> None:
+        try:
+            tmp = LIBRARY_CACHE_FILE.with_suffix(".json.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"ts": time.time(), "games": games}, f)
+            tmp.replace(LIBRARY_CACHE_FILE)
+        except Exception as e:
+            _log.warning("could not write library cache: %r", e)
+
+    async def library(self, force_refresh: bool = False) -> list[dict]:
+        if not force_refresh:
+            cached = self._read_library_cache()
+            if cached:
+                # Cheap local refresh of just the installed flags.
+                return await self.run(self._overlay_installed_blocking, cached)
+        games = await self.run(self._fetch_library_blocking)
+        self._write_library_cache(games)
+        return games
 
     async def installed(self) -> list[dict]:
         def _list() -> list[dict]:
