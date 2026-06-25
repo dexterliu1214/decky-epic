@@ -14,7 +14,7 @@ import {
   syncSaves,
   uninstallGame,
 } from "../api";
-import { launchAppViaSteam, removeShortcutForExe, terminateSteamGame, watchGameLifetime } from "../steam";
+import { launchAppViaSteam, removeShortcutForApp, terminateSteamGame, watchGameLifetime } from "../steam";
 import { useOps } from "../hooks/useOps";
 import { getCachedGame, getCachedScore } from "../state/libraryCache";
 import { currentAppName, LIBRARY_ROUTE } from "../routes";
@@ -148,7 +148,7 @@ export function GameDetailPage() {
         setInstalled(false);
         setSaves(null);
         setSteamAppid(null);
-        if (info?.exe) removeShortcutForExe(info.exe);
+        void removeShortcutForApp(appName, info?.exe);
       } else toaster.toast({ title: "Uninstall failed", body: res.error || "" });
     } finally {
       setBusy(false);

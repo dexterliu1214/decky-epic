@@ -54,3 +54,26 @@ class SettingsStore:
             self._data.update({k: v for k, v in patch.items() if k in DEFAULTS})
             self._save()
             return dict(self._data)
+
+    # --- Steam shortcut id map (app_name -> non-Steam shortcut appid) --------
+    # Persisted so Game-Mode launches reuse one shortcut (and thus one Proton
+    # prefix) instead of creating a new shortcut — and a fresh save folder —
+    # every launch.
+    def get_shortcut_id(self, app_name: str):
+        with self._lock:
+            return (self._data.get("steam_shortcuts") or {}).get(app_name)
+
+    def set_shortcut_id(self, app_name: str, appid: int) -> None:
+        with self._lock:
+            m = dict(self._data.get("steam_shortcuts") or {})
+            m[app_name] = int(appid)
+            self._data["steam_shortcuts"] = m
+            self._save()
+
+    def remove_shortcut_id(self, app_name: str) -> None:
+        with self._lock:
+            m = dict(self._data.get("steam_shortcuts") or {})
+            if app_name in m:
+                del m[app_name]
+                self._data["steam_shortcuts"] = m
+                self._save()

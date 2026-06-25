@@ -143,6 +143,21 @@ class Plugin:
             return {"ok": False, "error": self.core_error or "backend not ready"}
         return await self.core.cover_b64(app_name)
 
+    # --- Steam shortcut id persistence (dedupe Game-Mode shortcuts) ----------
+    async def get_shortcut_id(self, app_name: str) -> dict:
+        appid = self.settings.get_shortcut_id(app_name) if self.settings else None
+        return {"appid": appid}
+
+    async def set_shortcut_id(self, app_name: str, appid: int) -> dict:
+        if self.settings:
+            self.settings.set_shortcut_id(app_name, appid)
+        return {"ok": True}
+
+    async def remove_shortcut_id(self, app_name: str) -> dict:
+        if self.settings:
+            self.settings.remove_shortcut_id(app_name)
+        return {"ok": True}
+
     # --- metacritic / RAWG ---------------------------------------------------
     async def get_cached_scores(self, app_names: list[str]) -> dict:
         if not self.rawg:

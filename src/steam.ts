@@ -6,7 +6,7 @@
 //
 // SteamClient is an ambient global provided by @decky/ui's type declarations.
 
-import { coverB64, getSettings, steamLaunchInfo } from "./api";
+import { coverB64, getSettings, getShortcutId, removeShortcutId, setShortcutId, steamLaunchInfo } from "./api";
 
 export interface SteamLaunchSpec {
   appName: string;
@@ -30,6 +30,15 @@ async function applyCoverArt(appid: number, appName: string): Promise<void> {
     }
   } catch {
     /* artwork is best-effort; never block the launch on it */
+  }
+}
+
+/** Does Steam still know about this shortcut appid? */
+function shortcutExists(appid: number): boolean {
+  try {
+    return !!(window as any).appStore?.GetAppOverviewByAppID?.(appid);
+  } catch {
+    return false;
   }
 }
 
@@ -75,11 +84,25 @@ async function pickCompatTool(appid: number, preferred?: string): Promise<string
   }
 }
 
-/** Ensure a shortcut exists + has Proton, and return its 32-bit appid. */
+/** Ensure a shortcut exists + has Proton, and return its 32-bit appid.
+ *
+ * Reuse is keyed off a persisted app_name -> appid map: relying on scanning the
+ * app store by exe was unreliable (Steam stores the exe quoted and the store
+ * shape varies), which created a NEW shortcut — and a fresh Proton prefix, so
+ * settings/saves reset — on every launch. */
 export async function ensureSteamShortcut(spec: SteamLaunchSpec): Promise<number> {
-  const existing = findExistingShortcut(spec.exe);
-  const appid =
-    existing ?? (await SteamClient.Apps.AddShortcut(spec.name, spec.exe, spec.startDir, spec.launchOptions));
+  let appid: number | null = null;
+  const stored = (await getShortcutId(spec.appName).catch(() => ({ appid: null }))).appid;
+  if (stored != null && shortcutExists(stored)) {
+    appid = stored;
+  } else {
+    appid = findExistingShortcut(spec.exe); // fallback for pre-existing shortcuts
+  }
+
+  const isNew = appid == null;
+  if (appid == null) {
+    appid = await SteamClient.Apps.AddShortcut(spec.name, spec.exe, spec.startDir, spec.launchOptions);
+  }
   // AddShortcut's name arg is ignored on some Steam builds (it falls back to the
   // exe basename, e.g. "Backpack Hero.exe"), so always set the name explicitly.
   SteamClient.Apps.SetShortcutName(appid, spec.name);
@@ -87,7 +110,8 @@ export async function ensureSteamShortcut(spec: SteamLaunchSpec): Promise<number
   SteamClient.Apps.SetShortcutLaunchOptions(appid, spec.launchOptions);
   const tool = await pickCompatTool(appid, spec.preferredProton);
   if (tool) SteamClient.Apps.SpecifyCompatTool(appid, tool);
-  if (existing == null) await applyCoverArt(appid, spec.appName); // set art once, on create
+  if (isNew) await applyCoverArt(appid, spec.appName); // set art once, on create
+  await setShortcutId(spec.appName, appid).catch(() => undefined); // remember for reuse
   return appid;
 }
 
@@ -136,12 +160,21 @@ export async function launchAppViaSteam(appName: string): Promise<number | null>
   return launchViaSteam(spec);
 }
 
-/** Remove the shortcut whose exe matches. Resolve exe BEFORE uninstalling. */
-export function removeShortcutForExe(exe: string): boolean {
-  const appid = findExistingShortcut(exe);
-  if (appid == null) return false;
-  SteamClient.Apps.RemoveShortcut(appid);
-  return true;
+/** Remove a game's shortcut (persisted appid first, exe scan as fallback) and
+ *  forget the mapping. Pass the exe (resolved BEFORE uninstalling) for fallback. */
+export async function removeShortcutForApp(appName: string, exe?: string): Promise<void> {
+  const stored = (await getShortcutId(appName).catch(() => ({ appid: null }))).appid;
+  let removed = false;
+  if (stored != null) {
+    try { SteamClient.Apps.RemoveShortcut(stored); removed = true; } catch { /* noop */ }
+  }
+  if (!removed && exe) {
+    const appid = findExistingShortcut(exe);
+    if (appid != null) {
+      try { SteamClient.Apps.RemoveShortcut(appid); } catch { /* noop */ }
+    }
+  }
+  await removeShortcutId(appName).catch(() => undefined);
 }
 
 /**

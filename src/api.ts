@@ -51,6 +51,9 @@ export const steamLaunchInfo =
   );
 export const coverB64 =
   callable<[string], { ok: boolean; b64?: string; type?: "png" | "jpg"; error?: string }>("cover_b64");
+export const getShortcutId = callable<[string], { appid: number | null }>("get_shortcut_id");
+export const setShortcutId = callable<[string, number], { ok: boolean }>("set_shortcut_id");
+export const removeShortcutId = callable<[string], { ok: boolean }>("remove_shortcut_id");
 export const stopGame = callable<[], { ok: boolean; error?: string }>("stop_game");
 export const isRunning = callable<[], { running: boolean; app_name: string | null }>("is_running");
 export const syncSaves =
