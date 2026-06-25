@@ -8,10 +8,36 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
 _log = logging.getLogger("decky-epic.proton")
+
+# Matches the `"path"   "/some/library"` entries in libraryfolders.vdf
+# (works for both the legacy flat format and the current nested one).
+_VDF_PATH_RE = re.compile(r'"path"\s*"([^"]+)"')
+
+
+def library_folders(root: Path) -> list[Path]:
+    """Extra Steam library folders declared in libraryfolders.vdf.
+
+    Games — and the Proton builds installed alongside them — often live on an SD
+    card or external drive, which Steam records as an additional library folder
+    rather than under the main install. Without reading this, Proton on a second
+    library is invisible: the classic "No Proton build found" on a Steam Deck
+    with games on the SD card.
+    """
+    paths: list[Path] = []
+    for vdf in (root / "steamapps" / "libraryfolders.vdf",
+                root / "config" / "libraryfolders.vdf"):
+        try:
+            text = vdf.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        for m in _VDF_PATH_RE.finditer(text):
+            paths.append(Path(m.group(1).replace("\\\\", "/")))
+    return paths
 
 
 def steam_roots() -> list[Path]:
@@ -42,11 +68,25 @@ def _is_proton_dir(d: Path) -> bool:
 def discover_proton_builds() -> list[dict]:
     """Return [{name, path (proton script), tool_dir}] sorted newest-ish first."""
     builds: dict[str, dict] = {}
+    # Collect every base to scan: each Steam root plus all library folders it
+    # declares (SD card / external drives). Deduped by resolved path.
+    bases: list[Path] = []
+    seen_bases: set[Path] = set()
     for root in steam_roots():
+        for base in [root, *library_folders(root)]:
+            try:
+                real = base.resolve()
+            except Exception:
+                real = base
+            if real not in seen_bases:
+                seen_bases.add(real)
+                bases.append(real)
+
+    for base in bases:
         search_dirs = [
-            root / "steamapps" / "common",
-            root / "compatibilitytools.d",
-            root / "steamapps" / "compatibilitytools.d",
+            base / "steamapps" / "common",
+            base / "compatibilitytools.d",
+            base / "steamapps" / "compatibilitytools.d",
         ]
         for sd in search_dirs:
             if not sd.is_dir():
