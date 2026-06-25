@@ -160,6 +160,62 @@ class EpicCore:
 
         return await self.run(_list)
 
+    async def steam_launch_info(self, app_name: str) -> dict:
+        """Resolve what the frontend needs to create a non-Steam shortcut for
+        this game (so it shows in Game Mode via gamescope). The frontend handles
+        AddShortcut / compat tool / RunGame."""
+        def _info() -> dict:
+            import os
+            ig = self._core.get_installed_game(app_name)
+            if not ig:
+                return {"ok": False, "error": "Game is not installed."}
+            exe = os.path.join(ig.install_path, ig.executable)
+            cover = None
+            try:
+                g = self._core.get_game(app_name)
+                cover = _cover_url(getattr(g, "metadata", {}) or {})
+            except Exception as e:
+                _log.warning("cover lookup failed for %s: %r", app_name, e)
+            # Host-side cloud-save wrapper: pulls before launch, pushes after
+            # exit, resolving saves against Steam's actual Proton prefix.
+            wrapper = paths.PLUGIN_DIR / "py_modules" / "epic" / "steam_save_wrapper.sh"
+            launch_options = f'bash "{wrapper}" {app_name} %command%'
+            return {
+                "ok": True,
+                "app_name": app_name,
+                "name": ig.title,          # display name only; no ".exe"
+                "exe": exe,
+                "start_dir": ig.install_path,
+                "cover": cover,
+                "launch_options": launch_options,
+            }
+
+        return await self.run(_info)
+
+    async def cover_b64(self, app_name: str) -> dict:
+        """Download the game's cover art and return it base64-encoded so the
+        frontend can set it as the Steam shortcut's portrait capsule (no CORS)."""
+        def _fetch() -> dict:
+            import base64
+            try:
+                g = self._core.get_game(app_name)
+                url = _cover_url(getattr(g, "metadata", {}) or {})
+            except Exception as e:
+                return {"ok": False, "error": f"{e}"}
+            if not url:
+                return {"ok": False, "error": "No cover art available."}
+            try:
+                import requests
+                r = requests.get(url, timeout=20)
+                r.raise_for_status()
+            except Exception as e:
+                return {"ok": False, "error": f"{e}"}
+            ctype = (r.headers.get("Content-Type") or "").lower()
+            img_type = "png" if ("png" in ctype or url.lower().endswith(".png")) else "jpg"
+            return {"ok": True, "b64": base64.b64encode(r.content).decode("ascii"), "type": img_type}
+
+        return await self.run(_fetch)
+
 
 def _extract_auth_code(pasted: str) -> str:
     """Accept either the raw authorization code or the JSON blob Epic shows

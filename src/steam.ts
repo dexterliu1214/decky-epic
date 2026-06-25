@@ -1,0 +1,169 @@
+// Launching Epic games in Game Mode requires going through Steam: a process we
+// spawn directly with `proton run` creates a window gamescope never shows
+// (gamescope only displays the app Steam is focused on). So we register the game
+// as a non-Steam shortcut, assign a Proton compat tool, and RunGame it — then
+// gamescope shows it with full Game Mode integration.
+//
+// SteamClient is an ambient global provided by @decky/ui's type declarations.
+
+import { coverB64, getSettings, steamLaunchInfo } from "./api";
+
+export interface SteamLaunchSpec {
+  appName: string;
+  name: string;
+  exe: string;
+  startDir: string;
+  launchOptions: string;
+  /** Preferred Proton display name (from plugin settings), best-effort match. */
+  preferredProton?: string;
+}
+
+const NONSTEAM_APP_TYPE = 1073741824; // 1 << 30, the non-Steam shortcut bit
+const ASSET_CAPSULE = 0; // ELibraryAssetType.Capsule — the portrait library cover
+
+/** Set the shortcut's portrait capsule from the game's Epic cover art. */
+async function applyCoverArt(appid: number, appName: string): Promise<void> {
+  try {
+    const art = await coverB64(appName);
+    if (art.ok && art.b64) {
+      await SteamClient.Apps.SetCustomArtworkForApp(appid, art.b64, art.type || "jpg", ASSET_CAPSULE);
+    }
+  } catch {
+    /* artwork is best-effort; never block the launch on it */
+  }
+}
+
+/** Find an existing non-Steam shortcut whose exe matches, to avoid duplicates. */
+function findExistingShortcut(exe: string): number | null {
+  const wanted = exe.replace(/^"|"$/g, "");
+  try {
+    const apps = (window as any).collectionStore?.allAppsCollection?.allApps ?? [];
+    for (const a of apps) {
+      const ov = a?.appid ? a : a?.overview ?? a;
+      const appid = ov?.appid ?? a?.appid;
+      if (!appid) continue;
+      const isShortcut = (ov?.app_type & NONSTEAM_APP_TYPE) !== 0 || ov?.app_type === NONSTEAM_APP_TYPE;
+      if (!isShortcut) continue;
+      const exePath = (ov?.shortcut_override ?? ov?.strShortcutExe ?? "").replace(/^"|"$/g, "");
+      if (exePath && exePath === wanted) return appid;
+    }
+  } catch {
+    /* store shape varies across Steam builds; fall through to creating one */
+  }
+  return null;
+}
+
+async function pickCompatTool(appid: number, preferred?: string): Promise<string | null> {
+  try {
+    const tools = await SteamClient.Apps.GetAvailableCompatTools(appid);
+    if (!tools?.length) return null;
+    const byDisplay = (needle: string) =>
+      tools.find((t) => t.strDisplayName?.toLowerCase().includes(needle.toLowerCase()));
+    // 1) exact-ish match to the user's preferred Proton; 2) GE-Proton; 3) newest
+    // numbered Proton; 4) Experimental; 5) whatever is first.
+    const chosen =
+      (preferred && byDisplay(preferred)) ||
+      byDisplay("ge-proton") ||
+      tools
+        .filter((t) => /proton\s*\d/i.test(t.strDisplayName || ""))
+        .sort((a, b) => (b.strDisplayName || "").localeCompare(a.strDisplayName || "", undefined, { numeric: true }))[0] ||
+      byDisplay("experimental") ||
+      tools[0];
+    return chosen?.strToolName ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Ensure a shortcut exists + has Proton, and return its 32-bit appid. */
+export async function ensureSteamShortcut(spec: SteamLaunchSpec): Promise<number> {
+  const existing = findExistingShortcut(spec.exe);
+  const appid =
+    existing ?? (await SteamClient.Apps.AddShortcut(spec.name, spec.exe, spec.startDir, spec.launchOptions));
+  // AddShortcut's name arg is ignored on some Steam builds (it falls back to the
+  // exe basename, e.g. "Backpack Hero.exe"), so always set the name explicitly.
+  SteamClient.Apps.SetShortcutName(appid, spec.name);
+  SteamClient.Apps.SetShortcutStartDir(appid, spec.startDir);
+  SteamClient.Apps.SetShortcutLaunchOptions(appid, spec.launchOptions);
+  const tool = await pickCompatTool(appid, spec.preferredProton);
+  if (tool) SteamClient.Apps.SpecifyCompatTool(appid, tool);
+  if (existing == null) await applyCoverArt(appid, spec.appName); // set art once, on create
+  return appid;
+}
+
+/** 64-bit gameID for a non-Steam shortcut: appid << 32 | 0x02000000. */
+export function shortcutGameId(appid: number): string {
+  return ((BigInt(appid) << 32n) | 0x02000000n).toString();
+}
+
+export async function launchViaSteam(spec: SteamLaunchSpec): Promise<number> {
+  const appid = await ensureSteamShortcut(spec);
+  const gameId = shortcutGameId(appid);
+  SteamClient.Apps.RunGame(gameId, "", -1, 0);
+  return appid;
+}
+
+export function terminateSteamGame(appid: number): void {
+  SteamClient.Apps.TerminateApp(shortcutGameId(appid), false);
+}
+
+/** Build a launch spec from backend info + the user's preferred Proton. */
+async function specFor(appName: string): Promise<SteamLaunchSpec | null> {
+  const info = await steamLaunchInfo(appName);
+  if (!info.ok || !info.exe) return null;
+  const settings = await getSettings().catch(() => null);
+  return {
+    appName,
+    name: info.name || appName,
+    exe: info.exe,
+    startDir: info.start_dir || "",
+    launchOptions: info.launch_options || "",
+    preferredProton: (settings as any)?.preferred_proton || undefined,
+  };
+}
+
+/** Register (or refresh) a shortcut for a freshly-installed game, no launch. */
+export async function syncShortcutForInstall(appName: string): Promise<number | null> {
+  const spec = await specFor(appName);
+  if (!spec) return null;
+  return ensureSteamShortcut(spec);
+}
+
+/** Launch a game in Game Mode, creating/reusing its shortcut as needed. */
+export async function launchAppViaSteam(appName: string): Promise<number | null> {
+  const spec = await specFor(appName);
+  if (!spec) return null;
+  return launchViaSteam(spec);
+}
+
+/** Remove the shortcut whose exe matches. Resolve exe BEFORE uninstalling. */
+export function removeShortcutForExe(exe: string): boolean {
+  const appid = findExistingShortcut(exe);
+  if (appid == null) return false;
+  SteamClient.Apps.RemoveShortcut(appid);
+  return true;
+}
+
+/**
+ * Track start/exit of a launched shortcut. unAppID is unreliable (0) for
+ * non-Steam shortcuts, so we latch onto the nInstanceID seen at start and match
+ * the later exit by that instance. Returns an unsubscribe fn.
+ */
+export function watchGameLifetime(onChange: (running: boolean) => void): () => void {
+  let instanceId: number | null = null;
+  const reg = SteamClient.GameSessions.RegisterForAppLifetimeNotifications((n: any) => {
+    if (n.bRunning) {
+      if (instanceId == null) instanceId = n.nInstanceID;
+      onChange(true);
+    } else if (instanceId == null || n.nInstanceID === instanceId) {
+      onChange(false);
+    }
+  });
+  return () => {
+    try {
+      reg.unregister();
+    } catch {
+      /* noop */
+    }
+  };
+}

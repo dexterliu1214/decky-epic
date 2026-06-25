@@ -133,6 +133,16 @@ class Plugin:
             return []
         return await self.core.installed()
 
+    async def steam_launch_info(self, app_name: str) -> dict:
+        if not self.core:
+            return {"ok": False, "error": self.core_error or "backend not ready"}
+        return await self.core.steam_launch_info(app_name)
+
+    async def cover_b64(self, app_name: str) -> dict:
+        if not self.core:
+            return {"ok": False, "error": self.core_error or "backend not ready"}
+        return await self.core.cover_b64(app_name)
+
     # --- metacritic / RAWG ---------------------------------------------------
     async def get_cached_scores(self, app_names: list[str]) -> dict:
         if not self.rawg:

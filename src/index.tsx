@@ -12,6 +12,8 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { GameDetailPage } from "./pages/GameDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { GAME_ROUTE, LIBRARY_ROUTE, SETTINGS_ROUTE } from "./routes";
+import { subscribe } from "./api";
+import { syncShortcutForInstall } from "./steam";
 import { useAuth } from "./hooks/useAuth";
 import { useOps } from "./hooks/useOps";
 
@@ -66,12 +68,20 @@ export default definePlugin(() => {
   routerHook.addRoute(GAME_ROUTE, () => <GameDetailPage />, { exact: true });
   routerHook.addRoute(SETTINGS_ROUTE, () => <SettingsPage />, { exact: true });
 
+  // Auto-register a Steam shortcut when a game finishes installing, so it shows
+  // in the Steam library immediately (and launches in Game Mode). Lives at the
+  // plugin level so it fires regardless of whether the QAM panel is open.
+  const offInstall = subscribe<{ app_name: string; state: string }>("epic_download_state", (p) => {
+    if (p.state === "done" && p.app_name) void syncShortcutForInstall(p.app_name);
+  });
+
   return {
     name: "decky-epic",
     titleView: <div className={staticClasses.Title}>Epic</div>,
     content: <QuickAccessPanel />,
     icon: <FaGamepad />,
     onDismount() {
+      offInstall();
       routerHook.removeRoute(LIBRARY_ROUTE);
       routerHook.removeRoute(GAME_ROUTE);
       routerHook.removeRoute(SETTINGS_ROUTE);

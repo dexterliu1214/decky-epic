@@ -45,6 +45,12 @@ export const uninstallGame = callable<[string], { ok: boolean; error?: string }>
 
 // --- launch + saves --------------------------------------------------------
 export const launchGame = callable<[string], { ok: boolean; pid?: number; error?: string }>("launch_game");
+export const steamLaunchInfo =
+  callable<[string], { ok: boolean; app_name?: string; name?: string; exe?: string; start_dir?: string; cover?: string | null; launch_options?: string; error?: string }>(
+    "steam_launch_info",
+  );
+export const coverB64 =
+  callable<[string], { ok: boolean; b64?: string; type?: "png" | "jpg"; error?: string }>("cover_b64");
 export const stopGame = callable<[], { ok: boolean; error?: string }>("stop_game");
 export const isRunning = callable<[], { running: boolean; app_name: string | null }>("is_running");
 export const syncSaves =

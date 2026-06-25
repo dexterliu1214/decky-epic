@@ -8,13 +8,13 @@ import { MetacriticBadge } from "../components/MetacriticBadge";
 import { RawgAttribution } from "../components/RawgAttribution";
 import {
   cancelDownload,
-  launchGame,
   savesStatus,
   startDownload,
-  stopGame,
+  steamLaunchInfo,
   syncSaves,
   uninstallGame,
 } from "../api";
+import { launchAppViaSteam, removeShortcutForExe, terminateSteamGame, watchGameLifetime } from "../steam";
 import { useOps } from "../hooks/useOps";
 import { getCachedGame, getCachedScore } from "../state/libraryCache";
 import { currentAppName, LIBRARY_ROUTE } from "../routes";
@@ -38,11 +38,15 @@ export function GameDetailPage() {
   const [installed, setInstalled] = useState<boolean>(game?.installed ?? false);
   const [saves, setSaves] = useState<SavesStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  // Game Mode launches go through Steam (a non-Steam shortcut), so running state
+  // comes from Steam's app-lifetime notifications, not backend events.
+  const [steamAppid, setSteamAppid] = useState<number | null>(null);
+  const [steamRunning, setSteamRunning] = useState(false);
 
   const isThisDownloading =
     download?.app_name === appName && download.state === "downloading";
   const launchState = launch?.app_name === appName ? launch.state : undefined;
-  const isRunningThis = launchState === "running" || launchState === "launching" || launchState === "syncing_down";
+  const isRunningThis = steamRunning || busy;
 
   const loadSaves = useCallback(async () => {
     if (!installed || !game?.cloud_saves) return;
@@ -71,6 +75,16 @@ export function GameDetailPage() {
     }
   }, [launch, appName, loadSaves]);
 
+  // Track the Steam-launched game's start/exit; refresh saves when it exits.
+  useEffect(() => {
+    if (steamAppid == null) return;
+    const off = watchGameLifetime((running) => {
+      setSteamRunning(running);
+      if (!running) void loadSaves();
+    });
+    return off;
+  }, [steamAppid, loadSaves]);
+
   if (!appName) {
     return <div style={{ marginTop: 60, padding: 28 }}>No game selected.</div>;
   }
@@ -90,11 +104,22 @@ export function GameDetailPage() {
   const doPlay = async () => {
     setBusy(true);
     try {
-      const res = await launchGame(appName);
-      if (!res.ok) toaster.toast({ title: "Launch failed", body: res.error || "" });
+      const appid = await launchAppViaSteam(appName);
+      if (appid == null) {
+        toaster.toast({ title: "Launch failed", body: "Could not resolve the game executable." });
+        return;
+      }
+      setSteamAppid(appid);
+      setSteamRunning(true);
+    } catch (e) {
+      toaster.toast({ title: "Launch failed", body: `${e}` });
     } finally {
       setBusy(false);
     }
+  };
+
+  const doStop = () => {
+    if (steamAppid != null) terminateSteamGame(steamAppid);
   };
 
   const doSync = async (direction: "both" | "pull" | "push", up = false, down = false) => {
@@ -116,10 +141,14 @@ export function GameDetailPage() {
   const doUninstall = async () => {
     setBusy(true);
     try {
+      // Resolve the exe while still installed so we can drop the Steam shortcut.
+      const info = await steamLaunchInfo(appName).catch(() => null);
       const res = await uninstallGame(appName);
       if (res.ok) {
         setInstalled(false);
         setSaves(null);
+        setSteamAppid(null);
+        if (info?.exe) removeShortcutForExe(info.exe);
       } else toaster.toast({ title: "Uninstall failed", body: res.error || "" });
     } finally {
       setBusy(false);
@@ -175,7 +204,7 @@ export function GameDetailPage() {
               </DialogButton>
             )}
             {isRunningThis && (
-              <DialogButton onClick={() => stopGame()} style={{ width: 180 }}>
+              <DialogButton disabled={steamAppid == null} onClick={doStop} style={{ width: 180 }}>
                 <FaStop /> &nbsp;Stop
               </DialogButton>
             )}
