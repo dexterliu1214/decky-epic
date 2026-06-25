@@ -16,7 +16,7 @@ import asyncio
 import json
 import logging
 import os
-import sys
+import shutil
 from typing import Awaitable, Callable, Optional
 
 from . import paths
@@ -29,6 +29,20 @@ EVT_PROGRESS = "epic_download_progress"
 EVT_STATE = "epic_download_state"
 
 _CLI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "download_cli.py")
+
+# Decky's plugin host is a frozen (PyInstaller) binary, so sys.executable is the
+# PluginLoader — NOT a Python. Launching it would spawn a second loader and crash
+# Game Mode. Always use a real system Python for the download subprocess.
+_PYTHON = shutil.which("python3") or "/usr/bin/python3"
+
+
+def _child_env() -> dict:
+    """Environment for the download subprocess: inherit Decky's dirs but strip
+    the frozen host's Python vars so the real interpreter starts cleanly."""
+    env = dict(os.environ)
+    for k in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "LD_LIBRARY_PATH", "PYINSTALLER_RESET_ENVIRONMENT"):
+        env.pop(k, None)
+    return env
 
 
 class DownloadService:
@@ -53,10 +67,11 @@ class DownloadService:
             return {"ok": False, "error": "A download is already in progress."}
 
         base = base_path or str(paths.DEFAULT_INSTALL_DIR)
-        argv = [sys.executable, _CLI, app_name, "--base", base, "--workers", str(int(max_workers or 0))]
+        argv = [_PYTHON, _CLI, app_name, "--base", base, "--workers", str(int(max_workers or 0))]
         try:
             proc = await asyncio.create_subprocess_exec(
                 *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                env=_child_env(),
             )
         except Exception as e:
             _log.exception("failed to launch download subprocess")
