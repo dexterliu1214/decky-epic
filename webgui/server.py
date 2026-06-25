@@ -18,11 +18,13 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEVSTATE = os.path.join(REPO, ".devstate")
 
 # Same local storage as the CLI harness so a login persists between them.
+# All overridable via env so the launcher can point at the *real* Decky plugin
+# config (~/homebrew/settings/decky-epic) and reuse its login + installed games.
 os.environ.setdefault("DECKY_USER_HOME", os.path.expanduser("~"))
-os.environ["DECKY_PLUGIN_DIR"] = REPO
-os.environ["DECKY_PLUGIN_SETTINGS_DIR"] = os.path.join(DEVSTATE, "settings")
-os.environ["DECKY_PLUGIN_RUNTIME_DIR"] = os.path.join(DEVSTATE, "runtime")
-os.environ["DECKY_PLUGIN_LOG_DIR"] = os.path.join(DEVSTATE, "logs")
+os.environ.setdefault("DECKY_PLUGIN_DIR", REPO)
+os.environ.setdefault("DECKY_PLUGIN_SETTINGS_DIR", os.path.join(DEVSTATE, "settings"))
+os.environ.setdefault("DECKY_PLUGIN_RUNTIME_DIR", os.path.join(DEVSTATE, "runtime"))
+os.environ.setdefault("DECKY_PLUGIN_LOG_DIR", os.path.join(DEVSTATE, "logs"))
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 _log = logging.getLogger("decky-epic.gui")
