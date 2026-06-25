@@ -14,7 +14,9 @@ import asyncio
 import logging
 import os
 import shlex
+import signal
 import sys
+from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
 from . import prefix, proton
@@ -35,6 +37,7 @@ class LaunchService:
         self.get_setting = get_setting
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._app: Optional[str] = None
+        self._proton_script: Optional[str] = None  # set on Linux launches
 
     def is_running(self) -> bool:
         return self._proc is not None and self._proc.returncode is None
@@ -46,6 +49,7 @@ class LaunchService:
         if self.is_running():
             return {"ok": False, "error": f"Already running: {self._app}"}
 
+        self._proton_script = None
         if IS_WINDOWS:
             # Native Windows launch — no Proton, no prefix. Cloud-save tokens
             # resolve directly against %LOCALAPPDATA% etc.
@@ -57,6 +61,7 @@ class LaunchService:
             pb = proton.resolve_proton(str(self.get_setting("preferred_proton", "") or ""))
             if not pb:
                 return {"ok": False, "error": "No Proton build found. Install Proton (e.g. GE-Proton) via Steam first."}
+            self._proton_script = pb["path"]  # needed to find wineserver for stop()
             # Record the prefix in legendary config so save-path resolution works.
             prefix.ensure_prefix(app_name)
             await self.epic.run(prefix.write_legendary_prefix_config, self.epic.core, app_name, steam_root)
@@ -79,7 +84,11 @@ class LaunchService:
         await self.emit(EVT_LAUNCH, {"app_name": app_name, "state": "launching"})
         try:
             proc = await asyncio.create_subprocess_exec(
-                *built["argv"], cwd=built["cwd"] or None, env=built["env"]
+                *built["argv"], cwd=built["cwd"] or None, env=built["env"],
+                # Own session/process group: a Ctrl+C or exit of the plugin host
+                # must not SIGINT the game (which wedges it), and lets stop() kill
+                # the whole group as a fallback.
+                start_new_session=True,
             )
         except Exception as e:
             _log.exception("spawn failed")
@@ -97,11 +106,42 @@ class LaunchService:
     async def stop(self) -> dict:
         if not self.is_running() or self._proc is None:
             return {"ok": False, "error": "No game is running."}
+        # Terminating the `proton run` wrapper does NOT stop the game: the real
+        # process is reparented to the pressure-vessel reaper and survives. Tear
+        # the whole Wine prefix down with `wineserver -k` instead; the wrapper
+        # then exits on its own, so _wait_and_upload still runs the post-exit
+        # cloud-save push. Fall back to signalling the process group.
+        if await self._kill_prefix():
+            return {"ok": True}
         try:
-            self._proc.terminate()
-        except Exception as e:
-            return {"ok": False, "error": f"{e}"}
+            os.killpg(os.getpgid(self._proc.pid), signal.SIGTERM)
+        except Exception:
+            try:
+                self._proc.terminate()
+            except Exception as e:
+                return {"ok": False, "error": f"{e}"}
         return {"ok": True}
+
+    async def _kill_prefix(self) -> bool:
+        """Kill every Wine process in this game's prefix via the Proton build's
+        bundled wineserver. Returns False if it can't be attempted."""
+        if IS_WINDOWS or not self._proton_script or not self._app:
+            return False
+        wineserver = Path(self._proton_script).parent / "files" / "bin" / "wineserver"
+        if not wineserver.is_file():
+            return False
+        env = os.environ.copy()
+        env["WINEPREFIX"] = str(prefix.pfx_dir(self._app))
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                str(wineserver), "-k", env=env,
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(proc.wait(), timeout=20)
+            return True
+        except Exception as e:
+            _log.warning("wineserver -k failed: %r", e)
+            return False
 
     async def _wait_and_upload(self, app_name: str, proc) -> None:
         code = await proc.wait()
