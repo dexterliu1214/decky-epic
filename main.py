@@ -138,10 +138,10 @@ class Plugin:
             return {"ok": False, "error": self.core_error or "backend not ready"}
         return await self.core.steam_launch_info(app_name)
 
-    async def cover_b64(self, app_name: str) -> dict:
+    async def artwork_b64(self, app_name: str) -> dict:
         if not self.core:
             return {"ok": False, "error": self.core_error or "backend not ready"}
-        return await self.core.cover_b64(app_name)
+        return await self.core.artwork_b64(app_name)
 
     # --- Steam shortcut id persistence (dedupe Game-Mode shortcuts) ----------
     async def get_shortcut_id(self, app_name: str) -> dict:

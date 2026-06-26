@@ -6,7 +6,7 @@
 //
 // SteamClient is an ambient global provided by @decky/ui's type declarations.
 
-import { coverB64, getSettings, getShortcutId, removeShortcutId, setShortcutId, steamLaunchInfo } from "./api";
+import { artworkB64, getSettings, getShortcutId, removeShortcutId, setShortcutId, steamLaunchInfo } from "./api";
 
 export interface SteamLaunchSpec {
   appName: string;
@@ -20,13 +20,18 @@ export interface SteamLaunchSpec {
 
 const NONSTEAM_APP_TYPE = 1073741824; // 1 << 30, the non-Steam shortcut bit
 const ASSET_CAPSULE = 0; // ELibraryAssetType.Capsule — the portrait library cover
+const ASSET_HERO = 1; // ELibraryAssetType.Hero — the big library-page background
 
-/** Set the shortcut's portrait capsule from the game's Epic cover art. */
+/** Set the shortcut's portrait capsule + Hero background from Epic art. */
 async function applyCoverArt(appid: number, appName: string): Promise<void> {
   try {
-    const art = await coverB64(appName);
-    if (art.ok && art.b64) {
-      await SteamClient.Apps.SetCustomArtworkForApp(appid, art.b64, art.type || "jpg", ASSET_CAPSULE);
+    const art = await artworkB64(appName);
+    if (!art.ok) return;
+    if (art.cover?.b64) {
+      await SteamClient.Apps.SetCustomArtworkForApp(appid, art.cover.b64, art.cover.type || "jpg", ASSET_CAPSULE);
+    }
+    if (art.hero?.b64) {
+      await SteamClient.Apps.SetCustomArtworkForApp(appid, art.hero.b64, art.hero.type || "jpg", ASSET_HERO);
     }
   } catch {
     /* artwork is best-effort; never block the launch on it */

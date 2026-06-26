@@ -49,8 +49,11 @@ export const steamLaunchInfo =
   callable<[string], { ok: boolean; app_name?: string; name?: string; exe?: string; start_dir?: string; cover?: string | null; launch_options?: string; error?: string }>(
     "steam_launch_info",
   );
-export const coverB64 =
-  callable<[string], { ok: boolean; b64?: string; type?: "png" | "jpg"; error?: string }>("cover_b64");
+type ArtworkImage = { b64: string; type: "png" | "jpg" };
+export const artworkB64 =
+  callable<[string], { ok: boolean; cover?: ArtworkImage | null; hero?: ArtworkImage | null; error?: string }>(
+    "artwork_b64",
+  );
 export const getShortcutId = callable<[string], { appid: number | null }>("get_shortcut_id");
 export const setShortcutId = callable<[string, number], { ok: boolean }>("set_shortcut_id");
 export const removeShortcutId = callable<[string], { ok: boolean }>("remove_shortcut_id");
