@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DialogButton, Focusable, Navigation, Spinner } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { FaCloud, FaCloudDownloadAlt, FaCloudUploadAlt, FaPlay, FaStop, FaTrash } from "react-icons/fa";
@@ -16,7 +16,7 @@ import {
 } from "../api";
 import { launchAppViaSteam, removeShortcutForApp, terminateSteamGame, watchGameLifetime } from "../steam";
 import { useOps } from "../hooks/useOps";
-import { getCachedGame, getCachedScore } from "../state/libraryCache";
+import { getCachedGame, getCachedScore, setCachedInstalled } from "../state/libraryCache";
 import { currentAppName, LIBRARY_ROUTE } from "../routes";
 import type { SavesStatus } from "../types";
 
@@ -61,11 +61,19 @@ export function GameDetailPage() {
     void loadSaves();
   }, [loadSaves]);
 
-  // Refresh installed/saves when a download or game run finishes.
+  // Mark installed + refresh saves when a download finishes — but only ONCE per
+  // completion. The op state lingers at "done", and loadSaves (a dep) is rebuilt
+  // whenever `installed` changes, so without this guard a later setInstalled(false)
+  // (uninstall) would re-trigger this effect and immediately flip it back to true.
+  const downloadDoneHandled = useRef(false);
   useEffect(() => {
-    if (download?.app_name === appName && download.state === "done") {
+    const done = download?.app_name === appName && download.state === "done";
+    if (done && !downloadDoneHandled.current) {
+      downloadDoneHandled.current = true;
       setInstalled(true);
       void loadSaves();
+    } else if (!done) {
+      downloadDoneHandled.current = false;
     }
   }, [download, appName, loadSaves]);
 
@@ -148,8 +156,13 @@ export function GameDetailPage() {
         setInstalled(false);
         setSaves(null);
         setSteamAppid(null);
+        setCachedInstalled(appName, false); // keep the grid / re-opened detail in sync
         void removeShortcutForApp(appName, info?.exe);
+        toaster.toast({ title: "Uninstalled", body: title });
       } else toaster.toast({ title: "Uninstall failed", body: res.error || "" });
+    } catch (e) {
+      // Never leave the button silently dead — surface the failure.
+      toaster.toast({ title: "Uninstall failed", body: `${e}` });
     } finally {
       setBusy(false);
     }

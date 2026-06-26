@@ -114,8 +114,22 @@ class DownloadService:
             core = self.epic.core
             igame = core.get_installed_game(app_name)
             if not igame:
-                return {"ok": False, "error": "Not installed."}
+                # Not registered (e.g. an interrupted install, or already gone).
+                # Treat as success so the frontend still reconciles — clears its
+                # state and drops the Steam shortcut — instead of a dead-end
+                # "Uninstall failed" that removes nothing.
+                return {"ok": True, "already_removed": True}
+            install_path = igame.install_path
             core.uninstall_game(igame, delete_files=True)
+            # legendary deletes only the manifest's files, leaving the install
+            # root (and any stray files like a leftover save folder) behind. Drop
+            # the whole directory so a later reinstall starts from a clean path
+            # rather than colliding with the orphan.
+            try:
+                if install_path and os.path.isdir(install_path):
+                    shutil.rmtree(install_path, ignore_errors=True)
+            except Exception as e:
+                _log.warning("could not remove install dir %s: %r", install_path, e)
             return {"ok": True}
 
         return await self.epic.run(_do)
