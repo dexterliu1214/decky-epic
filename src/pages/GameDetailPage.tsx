@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DialogButton, Focusable, Navigation, Spinner } from "@decky/ui";
+import { DialogButton, Focusable, Navigation, ScrollPanelGroup, Spinner } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { FaCloud, FaCloudDownloadAlt, FaCloudUploadAlt, FaDownload, FaPlay, FaStop, FaThumbsUp, FaTrash } from "react-icons/fa";
 
@@ -218,12 +218,10 @@ export function GameDetailPage() {
   };
 
   return (
-    <Focusable
-      // A Focusable scroll container lets the controller scroll the whole page,
-      // not just hop between the focusable rows (a plain div won't scroll).
-      flow-children="vertical"
-      style={{ marginTop: 40, padding: "0 28px 28px", height: "100%", overflowY: "scroll" }}
-    >
+    // ScrollPanelGroup is Steam's native scroll container — the right stick and
+    // focus-driven scrolling both work inside it (a plain div won't scroll).
+    <ScrollPanelGroup {...({ focusable: false, style: { height: "100%" } } as any)}>
+    <Focusable flow-children="vertical" style={{ marginTop: 40, padding: "0 28px 28px" }}>
       <DialogButton
         style={{ width: 120, marginBottom: 16 }}
         onClick={() => Navigation.Navigate(LIBRARY_ROUTE)}
@@ -356,6 +354,7 @@ export function GameDetailPage() {
 
       <RawgAttribution />
     </Focusable>
+    </ScrollPanelGroup>
   );
 }
 
