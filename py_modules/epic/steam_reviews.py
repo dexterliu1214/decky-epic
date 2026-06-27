@@ -218,10 +218,7 @@ class SteamReviewsService:
             c = cached.get(it["app_name"])
             stale = (not c) or (now - (c.get("fetched_at") or 0) > ttl)
             lang_changed = bool(c) and (c.get("name_lang") or "english") != lang
-            # Backfill genres into caches written before genre support, but only
-            # for games that are actually on Steam (a miss has steam_appid null).
-            needs_genres = bool(c) and not c.get("genres") and c.get("matched_name") is not None
-            if force or stale or lang_changed or needs_genres:
+            if force or stale or lang_changed:
                 todo.append(it)
 
         loop = asyncio.get_running_loop()

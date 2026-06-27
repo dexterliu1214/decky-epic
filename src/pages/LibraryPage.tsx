@@ -198,29 +198,32 @@ export function LibraryPage() {
         <SortControl value={sort} onChange={onSortChange} />
       </Focusable>
 
-      {(refreshing.steam || refreshing.rawg) && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            marginBottom: 14,
-            padding: "6px 12px",
-            background: "#1a1d23",
-            borderRadius: 6,
-            fontSize: 13,
-            opacity: 0.9,
-          }}
-        >
-          <Spinner style={{ width: 16, height: 16 }} />
-          <span>
-            {refreshing.steam &&
-              `Fetching Steam reviews & genres… ${refreshing.steam.done}/${refreshing.steam.total}`}
-            {refreshing.steam && refreshing.rawg && "  ·  "}
-            {refreshing.rawg && `Fetching Metacritic scores… ${refreshing.rawg.done}/${refreshing.rawg.total}`}
-          </span>
-        </div>
-      )}
+      {/* Fixed-height slot so the grid never shifts as this appears/disappears. */}
+      <div style={{ height: 28, marginBottom: 12, display: "flex", alignItems: "center" }}>
+        {(refreshing.steam || refreshing.rawg) && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              height: "100%",
+              padding: "0 12px",
+              background: "#1a1d23",
+              borderRadius: 6,
+              fontSize: 13,
+              opacity: 0.9,
+            }}
+          >
+            <Spinner style={{ width: 16, height: 16 }} />
+            <span>
+              {refreshing.steam &&
+                `Fetching Steam reviews & genres… ${refreshing.steam.done}/${refreshing.steam.total}`}
+              {refreshing.steam && refreshing.rawg && "  ·  "}
+              {refreshing.rawg && `Fetching Metacritic scores… ${refreshing.rawg.done}/${refreshing.rawg.total}`}
+            </span>
+          </div>
+        )}
+      </div>
 
       {error && <div style={{ color: "#f87171", marginBottom: 12 }}>Error: {error}</div>}
 
