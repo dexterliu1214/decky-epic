@@ -191,16 +191,22 @@ class Plugin:
         info = {"title": app_name, "description": ""}
         if self.core:
             info = await self.core.description(app_name)
+        epic_title = info.get("title") or app_name
         if self.steam_reviews:
             lang = str(self.settings.get("preferred_language", "tchinese") or "tchinese") if self.settings else "tchinese"
             try:
-                res = await self.steam_reviews.description(app_name, info.get("title") or app_name, lang)
-                if res and res.get("description"):
-                    return {"ok": True, "description": res["description"], "source": "steam"}
+                res = await self.steam_reviews.description(app_name, epic_title, lang)
+                if res and (res.get("description") or res.get("name")):
+                    return {
+                        "ok": True,
+                        "description": res.get("description") or info.get("description") or "",
+                        "name": res.get("name") or epic_title,
+                        "source": "steam",
+                    }
             except Exception:
                 decky.logger.exception("steam description failed")
         desc = info.get("description") or ""
-        return {"ok": bool(desc), "description": desc, "source": "epic"}
+        return {"ok": bool(desc), "description": desc, "name": epic_title, "source": "epic"}
 
     # --- downloads -----------------------------------------------------------
     async def start_download(self, app_name: str, base_path: str = "", max_workers: int = 0) -> dict:

@@ -53,6 +53,7 @@ export function GameDetailPage() {
   const [steamRunning, setSteamRunning] = useState(false);
   const [steamReview, setSteamReview] = useState<SteamReview | null>(null);
   const [description, setDescription] = useState<string | null>(null);
+  const [localizedName, setLocalizedName] = useState<string | null>(null);
 
   // Pull the cached Steam review (populated by the library's background refresh).
   useEffect(() => {
@@ -62,11 +63,14 @@ export function GameDetailPage() {
       .catch(() => undefined);
   }, [appName]);
 
-  // Fetch the synopsis (Traditional-Chinese-first, from Steam; Epic fallback).
+  // Fetch the synopsis + localized name (preferred-language, from Steam).
   useEffect(() => {
     if (!appName) return;
     void gameDescription(appName)
-      .then((r) => setDescription(r.ok ? r.description ?? null : null))
+      .then((r) => {
+        setDescription(r.ok ? r.description ?? null : null);
+        setLocalizedName(r.ok ? r.name ?? null : null);
+      })
       .catch(() => undefined);
   }, [appName]);
 
@@ -124,7 +128,8 @@ export function GameDetailPage() {
     return <div style={{ marginTop: 60, padding: 28 }}>No game selected.</div>;
   }
 
-  const title = game?.title ?? appName;
+  // Prefer the Steam localized name (in the user's chosen language) over Epic's.
+  const title = localizedName ?? game?.title ?? appName;
 
   const doInstall = async () => {
     setBusy(true);

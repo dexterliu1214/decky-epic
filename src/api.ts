@@ -45,7 +45,9 @@ export const refreshSteamReviews =
     "refresh_steam_reviews",
   );
 export const gameDescription =
-  callable<[string], { ok: boolean; description?: string; source?: "steam" | "epic" }>("game_description");
+  callable<[string], { ok: boolean; description?: string; name?: string; source?: "steam" | "epic" }>(
+    "game_description",
+  );
 
 // --- downloads -------------------------------------------------------------
 export const startDownload =

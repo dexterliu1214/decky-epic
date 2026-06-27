@@ -223,12 +223,32 @@ class SteamReviewsService:
             _log.warning("Steam appdetails failed for %s: %r", appid, e)
             return None
 
+    def _localized_name(self, title: str, lang: str, appid: int) -> Optional[str]:
+        """Steam's localized display name for a game (store search names ARE
+        localized, unlike appdetails). Match the known appid; fall back to the
+        most relevant result."""
+        import requests
+
+        self._throttle()
+        try:
+            r = requests.get(STORE_SEARCH, params={"term": title, "cc": "us", "l": lang}, timeout=15)
+            items = r.json().get("items") or []
+        except Exception as e:
+            _log.warning("Steam name lookup failed for %r: %r", title, e)
+            return None
+        for it in items:
+            if it.get("id") == appid:
+                return it.get("name")
+        return items[0].get("name") if items else None
+
     async def description(self, app_name: str, title: str, lang: str = "tchinese") -> Optional[dict]:
-        """Best-effort short description from Steam in the requested language.
-        Reuses the cached Steam appid; resolves one if we don't have it yet.
-        Steam returns the localized text when available and falls back to the
-        store's default (usually English) for the same request."""
+        """Best-effort short description AND localized display name from Steam in
+        the requested language. Reuses the cached Steam appid; resolves one if we
+        don't have it yet. Steam returns localized text when available and falls
+        back to the store default (usually English) for the same request."""
         import asyncio
+
+        lang = lang or "english"
 
         def _do() -> Optional[dict]:
             appid = self._cached_appid(app_name)
@@ -236,8 +256,11 @@ class SteamReviewsService:
                 appid, _ = self._resolve_appid(title)
             if not appid:
                 return None
-            desc = self._store_description(appid, lang or "english")
-            return {"steam_appid": appid, "description": desc} if desc else None
+            desc = self._store_description(appid, lang)
+            name = self._localized_name(title, lang, appid)
+            if not desc and not name:
+                return None
+            return {"steam_appid": appid, "description": desc, "name": name}
 
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, _do)
