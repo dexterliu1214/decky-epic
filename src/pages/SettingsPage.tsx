@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { DialogButton, Dropdown, Field, Focusable, Navigation, TextField } from "@decky/ui";
 import { toaster } from "@decky/api";
 
+import { openFilePicker } from "@decky/api";
+
 import { AuthDialog } from "../components/AuthDialog";
 import { listProtonBuilds } from "../api";
 import { useAuth } from "../hooks/useAuth";
@@ -27,6 +29,21 @@ export function SettingsPage() {
       setInstallPath(settings.install_base_path || "");
     }
   }, [settings]);
+
+  const browseInstallPath = async () => {
+    try {
+      // FileSelectionType.FOLDER = 1; folders only, no files.
+      const res = await openFilePicker(1 as any, installPath || "/home/deck", false, true);
+      const picked = (res as any)?.realpath || (res as any)?.path;
+      if (picked) {
+        setInstallPath(picked);
+        await save({ install_base_path: picked });
+        toaster.toast({ title: "Install location set", body: picked });
+      }
+    } catch {
+      /* picker cancelled */
+    }
+  };
 
   const onAuth = async (code: string) => {
     setSubmitting(true);
@@ -83,9 +100,17 @@ export function SettingsPage() {
       <section style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: 20 }}>Install location</h2>
         <TextField label="Base install path" value={installPath} onChange={(e) => setInstallPath(e.target.value)} />
-        <DialogButton style={{ width: 160, marginTop: 8 }} onClick={() => save({ install_base_path: installPath.trim() })}>
-          Save path
-        </DialogButton>
+        <div style={{ fontSize: 12, opacity: 0.7, margin: "4px 0 8px" }}>
+          Every game installs into its own folder under this directory.
+        </div>
+        <Focusable style={{ display: "flex", gap: 12, marginTop: 8 }}>
+          <DialogButton style={{ width: 160 }} onClick={browseInstallPath}>
+            Browse…
+          </DialogButton>
+          <DialogButton style={{ width: 160 }} onClick={() => save({ install_base_path: installPath.trim() })}>
+            Save path
+          </DialogButton>
+        </Focusable>
       </section>
 
       <section style={{ marginBottom: 28 }}>
