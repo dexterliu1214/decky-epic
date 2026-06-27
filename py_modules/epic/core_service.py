@@ -38,13 +38,26 @@ def _cover_url(metadata: dict) -> Optional[str]:
     return next(iter(by_type.values()), None)
 
 
-def _hero_url(metadata: dict) -> Optional[str]:
-    """Pick a wide/landscape image from Epic keyImages for the Steam Hero
-    (the big background on a game's library page)."""
+def _wide_url(metadata: dict) -> Optional[str]:
+    """Pick a wide/landscape image from Epic keyImages — used for both the Steam
+    Hero (big library-page background) and the Header (small landscape capsule).
+    Falls back to the square box art when a title has no true wide image."""
     images = (metadata or {}).get("keyImages") or []
     by_type = {img.get("type"): img.get("url") for img in images if img.get("url")}
     for t in ("DieselGameBoxWide", "DieselStoreFrontWide", "OfferImageWide",
               "TakeoverWide", "DieselGameBox"):
+        if by_type.get(t):
+            return by_type[t]
+    return None
+
+
+def _logo_url(metadata: dict) -> Optional[str]:
+    """Pick the transparent game-logo image (shown over the Hero), if any.
+    Only ~5% of Epic titles ship one, so there's no fallback — leave the Steam
+    Logo slot empty rather than stuffing it with non-transparent box art."""
+    images = (metadata or {}).get("keyImages") or []
+    by_type = {img.get("type"): img.get("url") for img in images if img.get("url")}
+    for t in ("DieselGameBoxLogo", "OfferImageLogo"):
         if by_type.get(t):
             return by_type[t]
     return None
@@ -263,9 +276,10 @@ class EpicCore:
         return await self.run(_info)
 
     async def artwork_b64(self, app_name: str) -> dict:
-        """Download the game's portrait cover and wide hero art, base64-encoded,
-        so the frontend can set both Steam shortcut artworks (no CORS): the
-        portrait capsule and the big library-page background (Hero)."""
+        """Download the game's Epic art, base64-encoded, so the frontend can set
+        every Steam shortcut artwork (no CORS): portrait Capsule, wide Hero
+        background, landscape Header, and the transparent Logo when one exists.
+        Hero and Header share the same wide image (downloaded once)."""
         def _fetch() -> dict:
             try:
                 g = self._core.get_game(app_name)
@@ -273,10 +287,11 @@ class EpicCore:
             except Exception as e:
                 return {"ok": False, "error": f"{e}"}
             cover = _download_b64(_cover_url(md))
-            hero = _download_b64(_hero_url(md))
-            if not cover and not hero:
+            wide = _download_b64(_wide_url(md))   # Hero + Header
+            logo = _download_b64(_logo_url(md))
+            if not any((cover, wide, logo)):
                 return {"ok": False, "error": "No artwork available."}
-            return {"ok": True, "cover": cover, "hero": hero}
+            return {"ok": True, "cover": cover, "hero": wide, "header": wide, "logo": logo}
 
         return await self.run(_fetch)
 

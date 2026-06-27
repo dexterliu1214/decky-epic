@@ -19,19 +19,27 @@ export interface SteamLaunchSpec {
 }
 
 const NONSTEAM_APP_TYPE = 1073741824; // 1 << 30, the non-Steam shortcut bit
-const ASSET_CAPSULE = 0; // ELibraryAssetType.Capsule — the portrait library cover
-const ASSET_HERO = 1; // ELibraryAssetType.Hero — the big library-page background
+// ELibraryAssetType slots (see @decky/ui App.d.ts).
+const ASSET_CAPSULE = 0; // portrait library cover
+const ASSET_HERO = 1; // big library-page background
+const ASSET_LOGO = 2; // transparent logo overlaid on the hero
+const ASSET_HEADER = 3; // landscape capsule (friends / recent strip)
 
-/** Set the shortcut's portrait capsule + Hero background from Epic art. */
+/** Set every Steam shortcut artwork from the game's Epic art (best-effort). */
 async function applyCoverArt(appid: number, appName: string): Promise<void> {
   try {
     const art = await artworkB64(appName);
     if (!art.ok) return;
-    if (art.cover?.b64) {
-      await SteamClient.Apps.SetCustomArtworkForApp(appid, art.cover.b64, art.cover.type || "jpg", ASSET_CAPSULE);
-    }
-    if (art.hero?.b64) {
-      await SteamClient.Apps.SetCustomArtworkForApp(appid, art.hero.b64, art.hero.type || "jpg", ASSET_HERO);
+    const slots: [typeof art.cover, number][] = [
+      [art.cover, ASSET_CAPSULE],
+      [art.hero, ASSET_HERO],
+      [art.header, ASSET_HEADER],
+      [art.logo, ASSET_LOGO],
+    ];
+    for (const [img, slot] of slots) {
+      if (img?.b64) {
+        await SteamClient.Apps.SetCustomArtworkForApp(appid, img.b64, img.type || "jpg", slot);
+      }
     }
   } catch {
     /* artwork is best-effort; never block the launch on it */
@@ -104,7 +112,6 @@ export async function ensureSteamShortcut(spec: SteamLaunchSpec): Promise<number
     appid = findExistingShortcut(spec.exe); // fallback for pre-existing shortcuts
   }
 
-  const isNew = appid == null;
   if (appid == null) {
     appid = await SteamClient.Apps.AddShortcut(spec.name, spec.exe, spec.startDir, spec.launchOptions);
   }
@@ -115,7 +122,10 @@ export async function ensureSteamShortcut(spec: SteamLaunchSpec): Promise<number
   SteamClient.Apps.SetShortcutLaunchOptions(appid, spec.launchOptions);
   const tool = await pickCompatTool(appid, spec.preferredProton);
   if (tool) SteamClient.Apps.SpecifyCompatTool(appid, tool);
-  if (isNew) await applyCoverArt(appid, spec.appName); // set art once, on create
+  // Apply capsule + Hero art every time (not just on create) so pre-existing
+  // shortcuts get backfilled. Fire-and-forget: art is best-effort and must not
+  // delay the launch.
+  void applyCoverArt(appid, spec.appName);
   await setShortcutId(spec.appName, appid).catch(() => undefined); // remember for reuse
   return appid;
 }
