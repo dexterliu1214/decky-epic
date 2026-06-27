@@ -12,7 +12,7 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { GameDetailPage } from "./pages/GameDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { GAME_ROUTE, LIBRARY_ROUTE, SETTINGS_ROUTE } from "./routes";
-import { listInstalled, subscribe } from "./api";
+import { subscribe } from "./api";
 import { syncShortcutForInstall } from "./steam";
 import { useAuth } from "./hooks/useAuth";
 import { useOps } from "./hooks/useOps";
@@ -74,20 +74,6 @@ export default definePlugin(() => {
   const offInstall = subscribe<{ app_name: string; state: string }>("epic_download_state", (p) => {
     if (p.state === "done" && p.app_name) void syncShortcutForInstall(p.app_name);
   });
-
-  // On load, ensure every installed game has a Steam shortcut with full art
-  // (capsule + Hero). This backfills shortcuts created before Hero support and
-  // any that only ever got the capsule. Sequential + best-effort so it never
-  // blocks the UI.
-  void (async () => {
-    try {
-      for (const g of await listInstalled()) {
-        await syncShortcutForInstall(g.app_name).catch(() => undefined);
-      }
-    } catch {
-      /* best-effort backfill */
-    }
-  })();
 
   return {
     name: "decky-epic",

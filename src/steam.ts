@@ -55,9 +55,12 @@ function shortcutExists(appid: number): boolean {
   }
 }
 
-/** Find an existing non-Steam shortcut whose exe matches, to avoid duplicates. */
+/** Find an existing non-Steam shortcut whose exe matches, to avoid duplicates.
+ *  Matches the full path, then falls back to the exe basename, since Steam
+ *  stores the path quoted/normalized inconsistently across builds. */
 function findExistingShortcut(exe: string): number | null {
   const wanted = exe.replace(/^"|"$/g, "");
+  const wantedBase = wanted.split(/[\\/]/).pop();
   try {
     const apps = (window as any).collectionStore?.allAppsCollection?.allApps ?? [];
     for (const a of apps) {
@@ -67,7 +70,8 @@ function findExistingShortcut(exe: string): number | null {
       const isShortcut = (ov?.app_type & NONSTEAM_APP_TYPE) !== 0 || ov?.app_type === NONSTEAM_APP_TYPE;
       if (!isShortcut) continue;
       const exePath = (ov?.shortcut_override ?? ov?.strShortcutExe ?? "").replace(/^"|"$/g, "");
-      if (exePath && exePath === wanted) return appid;
+      if (!exePath) continue;
+      if (exePath === wanted || (wantedBase && exePath.split(/[\\/]/).pop() === wantedBase)) return appid;
     }
   } catch {
     /* store shape varies across Steam builds; fall through to creating one */
