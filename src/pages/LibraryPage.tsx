@@ -9,6 +9,7 @@ import { RawgAttribution } from "../components/RawgAttribution";
 import { useAuth } from "../hooks/useAuth";
 import { useLibrary } from "../hooks/useLibrary";
 import { useOps } from "../hooks/useOps";
+import { useRefreshProgress } from "../hooks/useRefreshProgress";
 import { gameRoute, SETTINGS_ROUTE } from "../routes";
 import type { GameSummary, SortMode, SteamReview } from "../types";
 
@@ -68,6 +69,7 @@ export function LibraryPage() {
   const { status: auth, loading: authLoading } = useAuth();
   const { games, scores, steamReviews, loading, error, reload } = useLibrary();
   const { download } = useOps();
+  const refreshing = useRefreshProgress();
   const [sort, setSort] = useState<SortMode>(savedSort);
   const [query, setQuery] = useState(savedQuery);
   const [genre, setGenre] = useState(savedGenre);
@@ -195,6 +197,30 @@ export function LibraryPage() {
         )}
         <SortControl value={sort} onChange={onSortChange} />
       </Focusable>
+
+      {(refreshing.steam || refreshing.rawg) && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 14,
+            padding: "6px 12px",
+            background: "#1a1d23",
+            borderRadius: 6,
+            fontSize: 13,
+            opacity: 0.9,
+          }}
+        >
+          <Spinner style={{ width: 16, height: 16 }} />
+          <span>
+            {refreshing.steam &&
+              `Fetching Steam reviews & genres… ${refreshing.steam.done}/${refreshing.steam.total}`}
+            {refreshing.steam && refreshing.rawg && "  ·  "}
+            {refreshing.rawg && `Fetching Metacritic scores… ${refreshing.rawg.done}/${refreshing.rawg.total}`}
+          </span>
+        </div>
+      )}
 
       {error && <div style={{ color: "#f87171", marginBottom: 12 }}>Error: {error}</div>}
 
