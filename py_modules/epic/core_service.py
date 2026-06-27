@@ -10,6 +10,7 @@ import asyncio
 import functools
 import json
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Optional
@@ -90,22 +91,6 @@ def _is_game(summary: dict) -> bool:
     return "games" in (summary.get("categories") or [])
 
 
-def _clean_long_desc(text: str) -> str:
-    """Strip Epic's longDescription markup down to readable plain text: it uses
-    HTML comment markers (<!--textBlock-->, <!--title-->, <!--text-->), markdown
-    headings, occasional HTML tags, and a "#NAME?" artifact in broken entries."""
-    if not text:
-        return ""
-    import re
-    t = re.sub(r"<!--.*?-->", "", text, flags=re.S)   # epic block markers
-    t = re.sub(r"<[^>]+>", "", t)                       # any stray HTML tags
-    t = re.sub(r"(?m)^\s*#NAME\?\s*$", "", t)           # broken-data artifact
-    t = re.sub(r"(?m)^\s*#+\s*", "", t)                 # markdown headings -> plain
-    t = re.sub(r"[ \t]+\n", "\n", t)                    # trailing spaces
-    t = re.sub(r"\n{3,}", "\n\n", t)                    # collapse blank runs
-    return t.strip()
-
-
 # Map our settings' Steam-style language codes to Epic catalog locale codes, so
 # game titles and descriptions come back localized straight from Epic.
 _EPIC_LOCALE = {
@@ -128,6 +113,31 @@ def epic_locale(steam_lang: str) -> str:
     return _EPIC_LOCALE.get(steam_lang or "english", "en")
 
 
+# Epic Store front-end APIs — the real, localized synopsis lives here, not in the
+# entitlement catalog (whose `description` is just the title for most games).
+# Resolve the product slug from the namespace, then fetch the localized content.
+_STORE_GRAPHQL = "https://store.epicgames.com/graphql"
+_STORE_CONTENT = "https://store-content.ak.epicgames.com/api/{locale}/content/products/{slug}"
+_SLUG_QUERY = ('query($ns:String!){Catalog{catalogNs(namespace:$ns){'
+              'mappings(pageType:"productHome"){pageSlug}}}}')
+# Epic catalog locale -> Epic Store content locale.
+_STORE_LOCALE = {
+    "en": "en-US", "zh-Hant": "zh-Hant", "zh-Hans": "zh-CN", "ja": "ja", "ko": "ko",
+    "fr": "fr", "de": "de", "es-ES": "es-ES", "it": "it", "pt-BR": "pt-BR",
+    "ru": "ru", "th": "th",
+}
+
+
+def _strip_markup(text: Optional[str]) -> str:
+    """Plain-text a synopsis: drop legendary's longDescription markers, HTML
+    tags, markdown heading hashes, and collapse blank lines."""
+    t = re.sub(r"<!--.*?-->", "", text or "", flags=re.S)
+    t = re.sub(r"<[^>]+>", "", t)
+    t = re.sub(r"(?m)^#{1,6}\s*", "", t)  # markdown headings
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
+
+
 class EpicCore:
     def __init__(self) -> None:
         paths.apply_legendary_env()
@@ -141,6 +151,7 @@ class EpicCore:
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="legendary")
         self._lock = asyncio.Lock()
         self._locale = "en"  # Epic catalog locale for titles/descriptions
+        self._slug_cache: dict[str, Optional[str]] = {}  # namespace -> store slug
 
     def set_locale(self, steam_lang: str) -> None:
         """Point legendary's Epic catalog queries at the user's language so the
@@ -347,12 +358,64 @@ class EpicCore:
 
         return await self.run(_u)
 
+    def _catalog_text(self, ns: str, cid: str, locale: str) -> tuple:
+        """(title, description) from Epic's catalog at a specific locale. Swaps
+        the egs locale just for this call — safe because all core work runs on a
+        single locked executor."""
+        prev = self._core.egs.language_code
+        self._core.egs.language_code = locale
+        try:
+            info = self._core.egs.get_game_info(ns, cid, timeout=10.0) or {}
+            return info.get("title"), info.get("description")
+        except Exception as e:
+            _log.warning("catalog fetch (%s) failed: %r", locale, e)
+            return None, None
+        finally:
+            self._core.egs.language_code = prev
+
+    def _store_slug(self, namespace: str) -> Optional[str]:
+        """Resolve a game's Epic Store product slug from its namespace (cached)."""
+        if namespace in self._slug_cache:
+            return self._slug_cache[namespace]
+        slug = None
+        try:
+            r = self._core.egs.session.get(
+                _STORE_GRAPHQL,
+                params={"query": _SLUG_QUERY, "variables": json.dumps({"ns": namespace})},
+                timeout=10,
+            )
+            maps = (((r.json().get("data") or {}).get("Catalog") or {}).get("catalogNs") or {}).get("mappings") or []
+            slug = maps[0].get("pageSlug") if maps else None
+        except Exception as e:
+            _log.warning("store slug lookup failed for %s: %r", namespace, e)
+        self._slug_cache[namespace] = slug
+        return slug
+
+    def _store_description(self, slug: str, store_locale: str) -> Optional[str]:
+        """Localized synopsis from the Epic Store content API for a product slug."""
+        try:
+            r = self._core.egs.session.get(
+                _STORE_CONTENT.format(locale=store_locale, slug=slug), timeout=10)
+            if r.status_code != 200:
+                return None
+            pages = r.json().get("pages") or []
+            if not pages:
+                return None
+            about = (pages[0].get("data") or {}).get("about") or {}
+            return _strip_markup(about.get("shortDescription") or about.get("description")) or None
+        except Exception as e:
+            _log.warning("store content fetch failed (%s/%s): %r", store_locale, slug, e)
+            return None
+
     async def description(self, app_name: str) -> dict:
-        """Localized title + synopsis from Epic's catalog. Epic returns a rich
-        longDescription ("About this game") for many titles — prefer that
-        (markup stripped); otherwise use the short description when it's a real
-        sentence and not just the title. Epic itself falls back to English when
-        the configured locale has no text, so one query is enough."""
+        """Localized title + synopsis, entirely from Epic. Use the catalog's own
+        localized description when it has a real one (~25% of titles); for the
+        rest — where the catalog just echoes the title — pull the synopsis from
+        the Epic Store front-end (localized, English fallback)."""
+        def _real(d: Optional[str], title: str) -> bool:
+            d = (d or "").strip()
+            return bool(d) and d.lower() != title.strip().lower()
+
         def _d() -> dict:
             try:
                 g = self._core.get_game(app_name)
@@ -360,22 +423,33 @@ class EpicCore:
             except Exception:
                 return {"title": app_name, "description": ""}
             title = md.get("title") or app_name
-            short = md.get("description") or ""
             ns, cid = md.get("namespace"), md.get("id")
-            long_desc = ""
-            if ns and cid:
-                try:
-                    info = self._core.egs.get_game_info(ns, cid, timeout=10.0) or {}
-                    title = info.get("title") or title
-                    short = info.get("description") or short
-                    long_desc = info.get("longDescription") or ""
-                except Exception as e:
-                    _log.warning("catalog fetch failed for %s: %r", app_name, e)
 
-            synopsis = _clean_long_desc(long_desc)
-            if not synopsis and short and short.strip().lower() != title.strip().lower():
-                synopsis = short.strip()
-            return {"title": title, "description": synopsis}
+            desc = ""
+            if ns and cid:
+                loc_title, loc_desc = self._catalog_text(ns, cid, self._locale)
+                title = loc_title or title
+                if _real(loc_desc, title):
+                    desc = loc_desc.strip()
+
+            # Catalog had only the title — get the real synopsis from the Store.
+            if not desc and ns:
+                slug = self._store_slug(ns)
+                if slug:
+                    store_loc = _STORE_LOCALE.get(self._locale, "en-US")
+                    desc = self._store_description(slug, store_loc) or ""
+                    if not desc and store_loc != "en-US":
+                        desc = self._store_description(slug, "en-US") or ""
+
+            # Last resort: English catalog text, then the cleaned longDescription.
+            if not desc and ns and cid and self._locale != "en":
+                en_title, en_desc = self._catalog_text(ns, cid, "en")
+                if _real(en_desc, en_title or title):
+                    desc = en_desc.strip()
+            if not desc:
+                desc = _strip_markup(md.get("longDescription"))
+
+            return {"title": title, "description": desc}
 
         return await self.run(_d)
 

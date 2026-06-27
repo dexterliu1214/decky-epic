@@ -192,8 +192,8 @@ class Plugin:
         return await self.core.update_status(app_name)
 
     async def game_description(self, app_name: str) -> dict:
-        """Localized title + synopsis for the detail page, from Epic's catalog
-        (longDescription, markup stripped). No Steam."""
+        """Localized title + synopsis for the detail page, entirely from Epic
+        (catalog title + Epic Store front-end synopsis). No Steam."""
         if not self.core:
             return {"ok": False, "description": "", "name": app_name, "source": "epic"}
         info = await self.core.description(app_name)
