@@ -331,11 +331,25 @@ class EpicCore:
 
         return await self.run(_u)
 
+    def _catalog_text(self, ns: str, cid: str, locale: str) -> tuple:
+        """(title, description) from Epic's catalog at a specific locale. Swaps
+        the egs locale just for this call — safe because all core work runs on a
+        single locked executor."""
+        prev = self._core.egs.language_code
+        self._core.egs.language_code = locale
+        try:
+            info = self._core.egs.get_game_info(ns, cid, timeout=10.0) or {}
+            return info.get("title"), info.get("description")
+        except Exception as e:
+            _log.warning("catalog fetch (%s) failed: %r", locale, e)
+            return None, None
+        finally:
+            self._core.egs.language_code = prev
+
     async def description(self, app_name: str) -> dict:
-        """Localized title + synopsis from Epic's catalog. Does ONE lightweight
-        catalog query at the configured locale (no achievements/manifests, which
-        is what makes a full library re-fetch rate-limit), falling back to the
-        cached (English) metadata if the query fails."""
+        """Localized title + synopsis from Epic's catalog (one lightweight query
+        at the configured locale). If the game has no description in that
+        language, fall back to fetching the English one."""
         def _d() -> dict:
             try:
                 g = self._core.get_game(app_name)
@@ -345,14 +359,23 @@ class EpicCore:
             title = md.get("title") or app_name
             desc = md.get("description") or ""
             ns, cid = md.get("namespace"), md.get("id")
-            if ns and cid and self._locale != "en":
-                try:
-                    info = self._core.egs.get_game_info(ns, cid, timeout=10.0)
-                    if info:
-                        title = info.get("title") or title
-                        desc = info.get("description") or desc
-                except Exception as e:
-                    _log.warning("localized catalog fetch failed for %s: %r", app_name, e)
+            if ns and cid:
+                if self._locale != "en":
+                    loc_title, loc_desc = self._catalog_text(ns, cid, self._locale)
+                    title = loc_title or title
+                    if loc_desc:
+                        desc = loc_desc
+                    else:
+                        # No synopsis in the preferred language — use English.
+                        en_title, en_desc = self._catalog_text(ns, cid, "en")
+                        desc = en_desc or desc
+                        if not loc_title:
+                            title = en_title or title
+                elif not desc:
+                    # English preferred but the cache had no text — fetch it.
+                    en_title, en_desc = self._catalog_text(ns, cid, "en")
+                    title = en_title or title
+                    desc = en_desc or desc
             return {"title": title, "description": desc}
 
         return await self.run(_d)
