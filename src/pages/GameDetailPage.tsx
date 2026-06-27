@@ -116,6 +116,10 @@ export function GameDetailPage() {
       downloadDoneHandled.current = true;
       setInstalled(true);
       void loadSaves();
+      // A finished download/update may have brought the game up to date.
+      void checkUpdate(appName)
+        .then((r) => setUpdateAvailable(!!r.update_available))
+        .catch(() => undefined);
     } else if (!done) {
       downloadDoneHandled.current = false;
     }
