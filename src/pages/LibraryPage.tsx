@@ -71,6 +71,8 @@ export function LibraryPage() {
   const [sort, setSort] = useState<SortMode>(savedSort);
   const [query, setQuery] = useState(savedQuery);
   const [genre, setGenre] = useState(savedGenre);
+  // Bumped when sort/genre changes to pull gamepad focus back to the top card.
+  const [focusTopSignal, setFocusTopSignal] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   // Capture the focus target once at mount so it doesn't shift as the user
   // moves focus around after we've restored it.
@@ -97,11 +99,15 @@ export function LibraryPage() {
 
   // Changing the sort reorders everything, so the remembered focus and scroll
   // position no longer mean anything — clear them and jump back to the top.
-  const onSortChange = (m: SortMode) => {
-    setSort(m);
+  const resetView = () => {
     savedFocusApp = null;
     savedScrollTop = 0;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    setFocusTopSignal((n) => n + 1); // pull focus to the new top card
+  };
+  const onSortChange = (m: SortMode) => {
+    setSort(m);
+    resetView();
   };
 
   // Every genre present in the library (from Steam), for the filter dropdown.
@@ -113,9 +119,7 @@ export function LibraryPage() {
 
   const onGenreChange = (gn: string) => {
     setGenre(gn);
-    savedFocusApp = null;
-    savedScrollTop = 0;
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    resetView();
   };
 
   const visible = useMemo(() => {
@@ -206,13 +210,14 @@ export function LibraryPage() {
             gap: 16,
           }}
         >
-          {visible.map((g) => (
+          {visible.map((g, idx) => (
             <GameCard
               key={g.app_name}
               game={g}
               score={scores[g.app_name]}
               steamReview={steamReviews[g.app_name]}
               autoFocus={g.app_name === focusOnMount}
+              focusSignal={idx === 0 ? focusTopSignal : undefined}
               onFocus={() => {
                 savedFocusApp = g.app_name;
               }}

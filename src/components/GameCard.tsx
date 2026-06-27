@@ -30,6 +30,7 @@ export function GameCard({
   onActivate,
   onFocus,
   autoFocus = false,
+  focusSignal,
   width = 150,
 }: {
   game: GameSummary;
@@ -38,6 +39,9 @@ export function GameCard({
   onActivate: () => void;
   onFocus?: () => void;
   autoFocus?: boolean;
+  /** Bump this number to (re)grab focus to this card — used to jump focus to
+   *  the top card when the sort/genre changes. */
+  focusSignal?: number;
   width?: number;
 }) {
   const steamPct = steamReview?.positive_pct;
@@ -50,6 +54,11 @@ export function GameCard({
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
+
+  // Grab focus when the parent bumps the signal (sort/genre changed).
+  useEffect(() => {
+    if (focusSignal && focusSignal > 0) ref.current?.focus();
+  }, [focusSignal]);
 
   return (
     <Focusable
