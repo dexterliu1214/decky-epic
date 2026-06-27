@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { Focusable } from "@decky/ui";
 import { FaCloud, FaDownload, FaThumbsUp } from "react-icons/fa";
 import type { GameSummary, SteamReview } from "../types";
@@ -28,20 +28,34 @@ export function GameCard({
   score,
   steamReview,
   onActivate,
+  onFocus,
+  autoFocus = false,
   width = 150,
 }: {
   game: GameSummary;
   score: number | null | undefined;
   steamReview?: SteamReview;
   onActivate: () => void;
+  onFocus?: () => void;
+  autoFocus?: boolean;
   width?: number;
 }) {
   const steamPct = steamReview?.positive_pct;
   const height = Math.round(width * 1.33);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Restore gamepad focus to the card the user came back from (also scrolls it
+  // into view). Runs once on mount for the single card flagged by the parent.
+  useEffect(() => {
+    if (autoFocus) ref.current?.focus();
+  }, [autoFocus]);
+
   return (
     <Focusable
+      ref={ref}
       onActivate={onActivate}
       onOKButton={onActivate}
+      onFocus={onFocus}
       style={{
         width,
         borderRadius: 6,

@@ -56,10 +56,12 @@ function sortGames(
 }
 
 // Module-level so they survive the page unmounting when you open a game's detail
-// page and navigate back — restoring scroll, sort, and search instead of resetting.
+// page and navigate back — restoring scroll, sort, search, and gamepad focus
+// instead of resetting.
 let savedScrollTop = 0;
 let savedSort: SortMode = "metacritic";
 let savedQuery = "";
+let savedFocusApp: string | null = null;
 
 export function LibraryPage() {
   const { status: auth, loading: authLoading } = useAuth();
@@ -68,6 +70,9 @@ export function LibraryPage() {
   const [sort, setSort] = useState<SortMode>(savedSort);
   const [query, setQuery] = useState(savedQuery);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Capture the focus target once at mount so it doesn't shift as the user
+  // moves focus around after we've restored it.
+  const focusOnMount = useRef(savedFocusApp).current;
 
   // Persist sort + search across navigation.
   useEffect(() => {
@@ -167,6 +172,10 @@ export function LibraryPage() {
               game={g}
               score={scores[g.app_name]}
               steamReview={steamReviews[g.app_name]}
+              autoFocus={g.app_name === focusOnMount}
+              onFocus={() => {
+                savedFocusApp = g.app_name;
+              }}
               onActivate={() => Navigation.Navigate(gameRoute(g.app_name))}
             />
           ))}
