@@ -65,15 +65,17 @@ _NON_GAME_RE = re.compile(
 )
 
 
-def _title_score(target: str, name: str) -> float:
-    """How well a normalized Steam name matches the normalized target title.
-    Exact wins; a subtitle/edition suffix ("toem" vs "toem a photo adventure")
-    still scores high; otherwise fall back to a fuzzy ratio."""
-    if target == name:
-        return 1.0
-    if name.startswith(target + " ") or target.startswith(name + " "):
-        return 0.9
-    return difflib.SequenceMatcher(None, target, name).ratio()
+def _match_norm(name: str) -> str:
+    """Normalize for matching: strip release years, then fold Roman numerals to
+    digits so "Shenmue III" == "Shenmue 3"."""
+    n = _normalize(_YEAR_RE.sub("", name or ""))
+    return " ".join(_ROMAN_TO_INT.get(t, t) for t in n.split())
+
+
+def _subtitle_head(name: str) -> str:
+    """The part of a Steam name before a ': '/' - ' subtitle, normalized — so
+    "TOEM: A Photo Adventure" yields "toem"."""
+    return _match_norm(re.split(r"[:\-–—]", name or "", 1)[0])
 
 
 class SteamReviewsService:
@@ -173,27 +175,46 @@ class SteamReviewsService:
         if not items:
             return None, None
 
-        target = _normalize(title)
+        target = _match_norm(title)
         target_nums = _sequel_nums(target)
-        best, best_key = None, (-1.0, 0)
+        # Keep only plausible candidates: actual games (not OST/demo/…) with the
+        # same sequel number ("The Outer Worlds" must not match "…2").
+        cands = []
         for it in items:
             raw = it.get("name", "")
             if _NON_GAME_RE.search(raw):
-                continue  # soundtrack / demo / DLC, not the game
-            name_norm = _normalize(_YEAR_RE.sub("", raw))
-            # A differing sequel number means a different game: "The Outer Worlds"
-            # must not match "The Outer Worlds 2".
-            if _sequel_nums(name_norm) != target_nums:
                 continue
-            score = _title_score(target, name_norm)
-            key = (score, -len(raw))  # higher score, then prefer the shorter name
-            if key > best_key:
-                best, best_key = it, key
-        # No confident, same-numbering match — return nothing rather than risk a
-        # wrong game (better to show no Steam data than another title's).
-        if not best or best_key[0] < 0.6:
+            nm = _match_norm(raw)
+            if _sequel_nums(nm) != target_nums:
+                continue
+            cands.append((it, raw, nm))
+        if not cands:
             return None, None
-        return best.get("id"), best.get("name")
+
+        # 1) Exact title match — confident. Prefer the shortest raw name (base
+        #    game over an edition).
+        exact = [(it, raw) for it, raw, nm in cands if nm == target]
+        if exact:
+            it, _ = min(exact, key=lambda x: len(x[1]))
+            return it.get("id"), it.get("name")
+
+        # 2) Unambiguous subtitle: exactly one candidate is "<target>: subtitle"
+        #    ("TOEM" -> "TOEM: A Photo Adventure"). If several share the prefix
+        #    (e.g. two different "The Textorcist: …"), it's ambiguous — skip.
+        subs = [(it, raw) for it, raw, nm in cands if _subtitle_head(raw) == target]
+        if len(subs) == 1:
+            it, _ = subs[0]
+            return it.get("id"), it.get("name")
+
+        # 3) Strong fuzzy match only — avoid pairing "Pine" with "Pine Beat".
+        best, best_ratio = None, 0.0
+        for it, raw, nm in cands:
+            ratio = difflib.SequenceMatcher(None, target, nm).ratio()
+            if ratio > best_ratio:
+                best, best_ratio = it, ratio
+        if best and best_ratio >= 0.85:
+            return best.get("id"), best.get("name")
+        return None, None
 
     def _fetch_reviews(self, appid: int) -> Optional[dict]:
         import requests
