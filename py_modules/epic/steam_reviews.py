@@ -223,8 +223,8 @@ class SteamReviewsService:
             _log.warning("Steam appdetails failed for %s: %r", appid, e)
             return None
 
-    async def description(self, app_name: str, title: str) -> Optional[dict]:
-        """Best-effort Traditional-Chinese-first short description from Steam.
+    async def description(self, app_name: str, title: str, lang: str = "tchinese") -> Optional[dict]:
+        """Best-effort short description from Steam in the requested language.
         Reuses the cached Steam appid; resolves one if we don't have it yet.
         Steam returns the localized text when available and falls back to the
         store's default (usually English) for the same request."""
@@ -236,7 +236,7 @@ class SteamReviewsService:
                 appid, _ = self._resolve_appid(title)
             if not appid:
                 return None
-            desc = self._store_description(appid, "tchinese")
+            desc = self._store_description(appid, lang or "english")
             return {"steam_appid": appid, "description": desc} if desc else None
 
         loop = asyncio.get_running_loop()

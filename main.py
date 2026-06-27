@@ -192,8 +192,9 @@ class Plugin:
         if self.core:
             info = await self.core.description(app_name)
         if self.steam_reviews:
+            lang = str(self.settings.get("preferred_language", "tchinese") or "tchinese") if self.settings else "tchinese"
             try:
-                res = await self.steam_reviews.description(app_name, info.get("title") or app_name)
+                res = await self.steam_reviews.description(app_name, info.get("title") or app_name, lang)
                 if res and res.get("description"):
                     return {"ok": True, "description": res["description"], "source": "steam"}
             except Exception:

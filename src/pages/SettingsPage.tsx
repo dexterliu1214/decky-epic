@@ -11,6 +11,22 @@ import { useSettings } from "../hooks/useSettings";
 import { LIBRARY_ROUTE } from "../routes";
 import type { ProtonBuild } from "../types";
 
+// Steam store language codes used for the game synopsis.
+const LANGUAGES: { data: string; label: string }[] = [
+  { data: "tchinese", label: "繁體中文" },
+  { data: "schinese", label: "简体中文" },
+  { data: "english", label: "English" },
+  { data: "japanese", label: "日本語" },
+  { data: "koreana", label: "한국어" },
+  { data: "french", label: "Français" },
+  { data: "german", label: "Deutsch" },
+  { data: "spanish", label: "Español" },
+  { data: "italian", label: "Italiano" },
+  { data: "portuguese", label: "Português" },
+  { data: "russian", label: "Русский" },
+  { data: "thai", label: "ไทย" },
+];
+
 export function SettingsPage() {
   const { status, finish, logout, refresh } = useAuth();
   const { settings, save } = useSettings();
@@ -111,6 +127,21 @@ export function SettingsPage() {
             Save path
           </DialogButton>
         </Focusable>
+      </section>
+
+      <section style={{ marginBottom: 28 }}>
+        <h2 style={{ fontSize: 20 }}>Game synopsis</h2>
+        <Field label="Preferred language">
+          <Dropdown
+            rgOptions={LANGUAGES.map((l) => ({ data: l.data, label: l.label }))}
+            selectedOption={settings?.preferred_language ?? "tchinese"}
+            onChange={(o) => save({ preferred_language: o.data as string })}
+          />
+        </Field>
+        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+          Used for the description on a game's detail page. Falls back to English
+          when a game has no text in this language.
+        </div>
       </section>
 
       <section style={{ marginBottom: 28 }}>

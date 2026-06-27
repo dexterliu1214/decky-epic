@@ -83,6 +83,7 @@ export interface PluginSettings {
   preferred_proton: string;
   max_workers: number;
   metacritic_cache_ttl_days: number;
+  preferred_language: string;
 }
 
 export interface ProtonBuild {

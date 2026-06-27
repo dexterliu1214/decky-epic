@@ -16,6 +16,9 @@ DEFAULTS: dict[str, Any] = {
     "preferred_proton": "",
     "max_workers": 0,
     "metacritic_cache_ttl_days": 14,
+    # Steam store language code used for the game synopsis (e.g. tchinese,
+    # schinese, english, japanese, koreana).
+    "preferred_language": "tchinese",
 }
 
 
