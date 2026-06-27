@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DialogButton, Focusable, Navigation, Spinner } from "@decky/ui";
 import { toaster } from "@decky/api";
-import { FaCloud, FaCloudDownloadAlt, FaCloudUploadAlt, FaPlay, FaStop, FaTrash } from "react-icons/fa";
+import { FaCloud, FaCloudDownloadAlt, FaCloudUploadAlt, FaPlay, FaStop, FaThumbsUp, FaTrash } from "react-icons/fa";
 
 import { DownloadProgress } from "../components/DownloadProgress";
 import { MetacriticBadge } from "../components/MetacriticBadge";
 import { RawgAttribution } from "../components/RawgAttribution";
 import {
   cancelDownload,
+  getCachedSteamReviews,
   savesStatus,
   startDownload,
   steamLaunchInfo,
@@ -18,7 +19,14 @@ import { launchAppViaSteam, removeShortcutForApp, terminateSteamGame, watchGameL
 import { useOps } from "../hooks/useOps";
 import { getCachedGame, getCachedScore, setCachedInstalled } from "../state/libraryCache";
 import { currentAppName, LIBRARY_ROUTE } from "../routes";
-import type { SavesStatus } from "../types";
+import type { SavesStatus, SteamReview } from "../types";
+
+// Steam's review tiers, colour-coded the way the store does (blue = positive).
+function steamColor(pct: number): string {
+  if (pct >= 80) return "#66c0f4";
+  if (pct >= 40) return "#b9a074";
+  return "#a34c25";
+}
 
 const LAUNCH_LABEL: Record<string, string> = {
   syncing_down: "Syncing cloud save…",
@@ -42,6 +50,15 @@ export function GameDetailPage() {
   // comes from Steam's app-lifetime notifications, not backend events.
   const [steamAppid, setSteamAppid] = useState<number | null>(null);
   const [steamRunning, setSteamRunning] = useState(false);
+  const [steamReview, setSteamReview] = useState<SteamReview | null>(null);
+
+  // Pull the cached Steam review (populated by the library's background refresh).
+  useEffect(() => {
+    if (!appName) return;
+    void getCachedSteamReviews([appName])
+      .then((m) => setSteamReview(m[appName] ?? null))
+      .catch(() => undefined);
+  }, [appName]);
 
   const isThisDownloading =
     download?.app_name === appName && download.state === "downloading";
@@ -189,6 +206,18 @@ export function GameDetailPage() {
             <h1 style={{ margin: 0, fontSize: 28 }}>{title}</h1>
             <MetacriticBadge score={score} size={34} />
           </div>
+          {steamReview?.positive_pct != null && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+              <FaThumbsUp style={{ color: steamColor(steamReview.positive_pct) }} />
+              <span style={{ color: steamColor(steamReview.positive_pct), fontWeight: 600 }}>
+                {steamReview.review_desc}
+              </span>
+              <span style={{ opacity: 0.7, fontSize: 14 }}>
+                {steamReview.positive_pct}% positive
+                {steamReview.total_reviews ? ` · ${steamReview.total_reviews.toLocaleString()} reviews` : ""}
+              </span>
+            </div>
+          )}
           {game?.cloud_saves && (
             <div style={{ display: "flex", alignItems: "center", gap: 6, opacity: 0.8, marginTop: 6 }}>
               <FaCloud /> Cloud saves supported
