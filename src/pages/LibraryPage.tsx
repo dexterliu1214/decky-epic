@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DialogButton, Focusable, Navigation, Spinner, TextField } from "@decky/ui";
 import { FaCog, FaSyncAlt } from "react-icons/fa";
 
@@ -34,12 +34,37 @@ function sortGames(
   return arr;
 }
 
+// Module-level so they survive the page unmounting when you open a game's detail
+// page and navigate back — restoring scroll, sort, and search instead of resetting.
+let savedScrollTop = 0;
+let savedSort: SortMode = "metacritic";
+let savedQuery = "";
+
 export function LibraryPage() {
   const { status: auth, loading: authLoading } = useAuth();
   const { games, scores, loading, error, reload } = useLibrary();
   const { download } = useOps();
-  const [sort, setSort] = useState<SortMode>("metacritic");
-  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortMode>(savedSort);
+  const [query, setQuery] = useState(savedQuery);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Persist sort + search across navigation.
+  useEffect(() => {
+    savedSort = sort;
+    savedQuery = query;
+  }, [sort, query]);
+
+  // Restore the saved scroll position once the grid has rendered. Cards are a
+  // fixed size, so the layout height is stable even before cover images load.
+  useEffect(() => {
+    if (loading || savedScrollTop <= 0) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const id = requestAnimationFrame(() => {
+      el.scrollTop = savedScrollTop;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [loading]);
 
   const visible = useMemo(() => {
     const filtered = query
@@ -51,7 +76,13 @@ export function LibraryPage() {
   const loggedIn = auth?.logged_in;
 
   return (
-    <div style={{ marginTop: 40, padding: "0 28px 28px", height: "100%", overflowY: "scroll" }}>
+    <div
+      ref={scrollRef}
+      onScroll={(e) => {
+        savedScrollTop = e.currentTarget.scrollTop;
+      }}
+      style={{ marginTop: 40, padding: "0 28px 28px", height: "100%", overflowY: "scroll" }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <h1 style={{ margin: 0, fontSize: 26 }}>Epic Library</h1>
         <div style={{ flex: 1 }} />
