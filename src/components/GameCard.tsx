@@ -41,6 +41,7 @@ export function GameCard({
   width?: number;
 }) {
   const steamPct = steamReview?.positive_pct;
+  const displayName = steamReview?.localized_name || game.title;
   const height = Math.round(width * 1.33);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -84,7 +85,7 @@ export function GameCard({
               fontSize: 13,
             }}
           >
-            {game.title}
+            {displayName}
           </div>
         )}
         <div style={{ position: "absolute", top: 6, left: 6, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -129,9 +130,9 @@ export function GameCard({
           overflow: "hidden",
           textOverflow: "ellipsis",
         }}
-        title={game.title}
+        title={displayName}
       >
-        {game.title}
+        {displayName}
       </div>
     </Focusable>
   );

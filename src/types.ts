@@ -31,6 +31,7 @@ export interface SteamReview {
   positive_pct: number | null;
   total_reviews: number | null;
   review_desc: string | null;
+  localized_name?: string | null;
   matched_name?: string | null;
   fetched_at?: number | null;
 }

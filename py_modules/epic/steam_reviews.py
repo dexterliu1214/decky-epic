@@ -59,6 +59,12 @@ class SteamReviewsService:
                     fetched_at REAL
                 )"""
             )
+            # Migrations for the localized-name columns (older caches lack them).
+            for col in ("localized_name TEXT", "name_lang TEXT"):
+                try:
+                    c.execute(f"ALTER TABLE reviews ADD COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
 
     def _ttl_seconds(self) -> float:
         return float(self.settings.get("metacritic_cache_ttl_days", 14)) * 86400.0
@@ -70,8 +76,8 @@ class SteamReviewsService:
         with self._conn() as c:
             qmarks = ",".join("?" * len(app_names))
             for row in c.execute(
-                f"SELECT app_name, positive_pct, total_reviews, review_desc, matched_name, fetched_at "
-                f"FROM reviews WHERE app_name IN ({qmarks})",
+                f"SELECT app_name, positive_pct, total_reviews, review_desc, matched_name, fetched_at, "
+                f"localized_name, name_lang FROM reviews WHERE app_name IN ({qmarks})",
                 app_names,
             ):
                 out[row[0]] = {
@@ -80,18 +86,22 @@ class SteamReviewsService:
                     "review_desc": row[3],
                     "matched_name": row[4],
                     "fetched_at": row[5],
+                    "localized_name": row[6],
+                    "name_lang": row[7],
                 }
         return out
 
-    def _upsert(self, app_name, title, appid, pct, total, desc, matched) -> None:
+    def _upsert(self, app_name, title, appid, pct, total, desc, matched, localized, name_lang) -> None:
         with self._conn() as c:
             c.execute(
                 "INSERT INTO reviews(app_name,title,steam_appid,positive_pct,total_reviews,review_desc,"
-                "matched_name,fetched_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(app_name) DO UPDATE SET "
+                "matched_name,fetched_at,localized_name,name_lang) VALUES(?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(app_name) DO UPDATE SET "
                 "title=excluded.title, steam_appid=excluded.steam_appid, positive_pct=excluded.positive_pct, "
                 "total_reviews=excluded.total_reviews, review_desc=excluded.review_desc, "
-                "matched_name=excluded.matched_name, fetched_at=excluded.fetched_at",
-                (app_name, title, appid, pct, total, desc, matched, time.time()),
+                "matched_name=excluded.matched_name, fetched_at=excluded.fetched_at, "
+                "localized_name=excluded.localized_name, name_lang=excluded.name_lang",
+                (app_name, title, appid, pct, total, desc, matched, time.time(), localized, name_lang),
             )
 
     # -- Steam http ----------------------------------------------------------
@@ -153,22 +163,30 @@ class SteamReviewsService:
         return {"positive_pct": round(pos * 100 / total), "total_reviews": total,
                 "review_desc": qs.get("review_score_desc") or ""}
 
-    def _fetch_one(self, title: str) -> Optional[dict]:
-        appid, matched = self._resolve_appid(title)
+    def _fetch_one(self, title: str, lang: str = "english") -> Optional[dict]:
+        appid, matched = self._resolve_appid(title)  # English search for reliable matching
         if not appid:
             # Record the miss so we don't keep re-searching every refresh.
             return {"steam_appid": None, "positive_pct": None, "total_reviews": 0,
-                    "review_desc": "Not on Steam", "matched_name": None}
+                    "review_desc": "Not on Steam", "matched_name": None,
+                    "localized_name": None, "name_lang": lang}
         rev = self._fetch_reviews(appid)
         if rev is None:
             return None  # transient error — leave it for the next refresh
-        return {"steam_appid": appid, "matched_name": matched, **rev}
+        # English names are already the canonical title — only spend a request on
+        # a localized name when the user actually wants another language.
+        localized = self._localized_name(title, lang, appid) if lang and lang != "english" else None
+        return {"steam_appid": appid, "matched_name": matched,
+                "localized_name": localized, "name_lang": lang, **rev}
 
     # -- public async surface ------------------------------------------------
     async def refresh(self, items: list[dict], emit: EmitFn, force: bool = False) -> dict:
-        """items: [{app_name, title}]. Fetch missing/stale reviews, emit progress."""
+        """items: [{app_name, title}]. Fetch missing/stale reviews, emit progress.
+        An entry is also refreshed when the cached localized name was fetched in a
+        different language than the user's current preference."""
         import asyncio
 
+        lang = str(self.settings.get("preferred_language", "english") or "english")
         cached = self.cached([i["app_name"] for i in items])
         ttl = self._ttl_seconds()
         now = time.time()
@@ -176,23 +194,26 @@ class SteamReviewsService:
         for it in items:
             c = cached.get(it["app_name"])
             stale = (not c) or (now - (c.get("fetched_at") or 0) > ttl)
-            if force or stale:
+            lang_changed = bool(c) and (c.get("name_lang") or "english") != lang
+            if force or stale or lang_changed:
                 todo.append(it)
 
         loop = asyncio.get_running_loop()
         done = 0
         for it in todo:
-            res = await loop.run_in_executor(self._executor, self._fetch_one, it["title"])
+            res = await loop.run_in_executor(self._executor, self._fetch_one, it["title"], lang)
             if res is not None:
                 self._upsert(it["app_name"], it["title"], res.get("steam_appid"),
                              res.get("positive_pct"), res.get("total_reviews"),
-                             res.get("review_desc"), res.get("matched_name"))
+                             res.get("review_desc"), res.get("matched_name"),
+                             res.get("localized_name"), res.get("name_lang"))
             done += 1
             await emit(EVT_PROGRESS, {
                 "app_name": it["app_name"],
                 "positive_pct": (res or {}).get("positive_pct"),
                 "total_reviews": (res or {}).get("total_reviews"),
                 "review_desc": (res or {}).get("review_desc"),
+                "localized_name": (res or {}).get("localized_name"),
                 "done": done,
                 "total": len(todo),
             })

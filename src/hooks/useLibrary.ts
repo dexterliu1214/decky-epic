@@ -65,6 +65,7 @@ export function useLibrary() {
             positive_pct: p.positive_pct,
             total_reviews: p.total_reviews,
             review_desc: p.review_desc,
+            localized_name: p.localized_name,
           },
         })),
     );
