@@ -218,7 +218,11 @@ export function GameDetailPage() {
   };
 
   return (
-    <div style={{ marginTop: 40, padding: "0 28px 28px", height: "100%", overflowY: "scroll" }}>
+    <Focusable
+      // A Focusable scroll container lets the controller scroll the whole page,
+      // not just hop between the focusable rows (a plain div won't scroll).
+      style={{ marginTop: 40, padding: "0 28px 28px", height: "100%", overflowY: "scroll" }}
+    >
       <DialogButton
         style={{ width: 120, marginBottom: 16 }}
         onClick={() => Navigation.Navigate(LIBRARY_ROUTE)}
@@ -302,9 +306,9 @@ export function GameDetailPage() {
       </Focusable>
 
       {description && (
-        <div style={{ marginTop: 22, fontSize: 15, lineHeight: 1.6, opacity: 0.9, maxWidth: 900 }}>
+        <Focusable style={{ marginTop: 22, fontSize: 15, lineHeight: 1.6, opacity: 0.9, maxWidth: 900 }}>
           {description}
-        </div>
+        </Focusable>
       )}
 
       {isThisDownloading && (
@@ -347,7 +351,7 @@ export function GameDetailPage() {
       )}
 
       <RawgAttribution />
-    </div>
+    </Focusable>
   );
 }
 
