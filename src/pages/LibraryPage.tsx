@@ -99,8 +99,9 @@ export function LibraryPage() {
     return () => cancelAnimationFrame(id);
   }, [loading]);
 
-  // Changing the sort reorders everything, so the remembered focus and scroll
-  // position no longer mean anything — clear them and jump back to the top.
+  // Jump back to the top: clear the remembered focus/scroll and pull focus to
+  // the first card. Used by a sort change (the new order invalidates them) and
+  // by the Y button.
   const resetView = () => {
     savedFocusApp = null;
     savedScrollTop = 0;
@@ -233,6 +234,8 @@ export function LibraryPage() {
         </div>
       ) : (
         <Focusable
+          onOptionsButton={resetView}
+          onOptionsActionDescription="To top"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
