@@ -92,6 +92,15 @@ export function LibraryPage() {
     return () => cancelAnimationFrame(id);
   }, [loading]);
 
+  // Changing the sort reorders everything, so the remembered focus and scroll
+  // position no longer mean anything — clear them and jump back to the top.
+  const onSortChange = (m: SortMode) => {
+    setSort(m);
+    savedFocusApp = null;
+    savedScrollTop = 0;
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  };
+
   const visible = useMemo(() => {
     const filtered = query
       ? games.filter((g) => g.title.toLowerCase().includes(query.toLowerCase()))
@@ -149,7 +158,7 @@ export function LibraryPage() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <SortControl value={sort} onChange={setSort} />
+        <SortControl value={sort} onChange={onSortChange} />
       </Focusable>
 
       {error && <div style={{ color: "#f87171", marginBottom: 12 }}>Error: {error}</div>}
