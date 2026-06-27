@@ -185,6 +185,22 @@ class Plugin:
             return {"ok": False, "error": "steam reviews not ready"}
         return await self.steam_reviews.refresh(items, decky.emit, force=force)
 
+    async def game_description(self, app_name: str) -> dict:
+        """Synopsis for the detail page: Traditional-Chinese-first from Steam,
+        falling back to Epic's own description."""
+        info = {"title": app_name, "description": ""}
+        if self.core:
+            info = await self.core.description(app_name)
+        if self.steam_reviews:
+            try:
+                res = await self.steam_reviews.description(app_name, info.get("title") or app_name)
+                if res and res.get("description"):
+                    return {"ok": True, "description": res["description"], "source": "steam"}
+            except Exception:
+                decky.logger.exception("steam description failed")
+        desc = info.get("description") or ""
+        return {"ok": bool(desc), "description": desc, "source": "epic"}
+
     # --- downloads -----------------------------------------------------------
     async def start_download(self, app_name: str, base_path: str = "", max_workers: int = 0) -> dict:
         if not self.downloads:

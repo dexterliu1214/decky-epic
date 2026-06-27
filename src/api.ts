@@ -44,6 +44,8 @@ export const refreshSteamReviews =
   callable<[{ app_name: string; title: string }[], boolean], { ok: boolean; refreshed?: number; error?: string }>(
     "refresh_steam_reviews",
   );
+export const gameDescription =
+  callable<[string], { ok: boolean; description?: string; source?: "steam" | "epic" }>("game_description");
 
 // --- downloads -------------------------------------------------------------
 export const startDownload =

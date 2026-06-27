@@ -8,6 +8,7 @@ import { MetacriticBadge } from "../components/MetacriticBadge";
 import { RawgAttribution } from "../components/RawgAttribution";
 import {
   cancelDownload,
+  gameDescription,
   getCachedSteamReviews,
   savesStatus,
   startDownload,
@@ -51,12 +52,21 @@ export function GameDetailPage() {
   const [steamAppid, setSteamAppid] = useState<number | null>(null);
   const [steamRunning, setSteamRunning] = useState(false);
   const [steamReview, setSteamReview] = useState<SteamReview | null>(null);
+  const [description, setDescription] = useState<string | null>(null);
 
   // Pull the cached Steam review (populated by the library's background refresh).
   useEffect(() => {
     if (!appName) return;
     void getCachedSteamReviews([appName])
       .then((m) => setSteamReview(m[appName] ?? null))
+      .catch(() => undefined);
+  }, [appName]);
+
+  // Fetch the synopsis (Traditional-Chinese-first, from Steam; Epic fallback).
+  useEffect(() => {
+    if (!appName) return;
+    void gameDescription(appName)
+      .then((r) => setDescription(r.ok ? r.description ?? null : null))
       .catch(() => undefined);
   }, [appName]);
 
@@ -258,6 +268,12 @@ export function GameDetailPage() {
           </Focusable>
         </div>
       </Focusable>
+
+      {description && (
+        <div style={{ marginTop: 22, fontSize: 15, lineHeight: 1.6, opacity: 0.9, maxWidth: 900 }}>
+          {description}
+        </div>
+      )}
 
       {isThisDownloading && (
         <div style={{ marginTop: 20 }}>

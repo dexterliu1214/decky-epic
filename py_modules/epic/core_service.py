@@ -275,6 +275,19 @@ class EpicCore:
 
         return await self.run(_info)
 
+    async def description(self, app_name: str) -> dict:
+        """Epic's own (usually English) synopsis + title, used as a fallback when
+        no localized Steam description is available."""
+        def _d() -> dict:
+            try:
+                g = self._core.get_game(app_name)
+                md = getattr(g, "metadata", {}) or {}
+            except Exception:
+                return {"title": app_name, "description": ""}
+            return {"title": md.get("title") or app_name, "description": md.get("description") or ""}
+
+        return await self.run(_d)
+
     async def artwork_b64(self, app_name: str) -> dict:
         """Download the game's Epic art, base64-encoded, so the frontend can set
         every Steam shortcut artwork (no CORS): portrait Capsule, wide Hero

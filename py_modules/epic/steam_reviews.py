@@ -199,5 +199,48 @@ class SteamReviewsService:
         await emit(EVT_DONE, {"ok": True, "refreshed": len(todo)})
         return {"ok": True, "refreshed": len(todo)}
 
+    # -- localized description ----------------------------------------------
+    def _cached_appid(self, app_name: str) -> Optional[int]:
+        with self._conn() as c:
+            row = c.execute("SELECT steam_appid FROM reviews WHERE app_name=?", (app_name,)).fetchone()
+        return row[0] if row and row[0] else None
+
+    def _store_description(self, appid: int, lang: str) -> Optional[str]:
+        import requests
+
+        self._throttle()
+        try:
+            r = requests.get(
+                "https://store.steampowered.com/api/appdetails",
+                params={"appids": appid, "l": lang, "filters": "basic"},
+                timeout=15,
+            )
+            d = (r.json() or {}).get(str(appid)) or {}
+            if not d.get("success"):
+                return None
+            return (d.get("data") or {}).get("short_description") or None
+        except Exception as e:
+            _log.warning("Steam appdetails failed for %s: %r", appid, e)
+            return None
+
+    async def description(self, app_name: str, title: str) -> Optional[dict]:
+        """Best-effort Traditional-Chinese-first short description from Steam.
+        Reuses the cached Steam appid; resolves one if we don't have it yet.
+        Steam returns the localized text when available and falls back to the
+        store's default (usually English) for the same request."""
+        import asyncio
+
+        def _do() -> Optional[dict]:
+            appid = self._cached_appid(app_name)
+            if not appid:
+                appid, _ = self._resolve_appid(title)
+            if not appid:
+                return None
+            desc = self._store_description(appid, "tchinese")
+            return {"steam_appid": appid, "description": desc} if desc else None
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self._executor, _do)
+
     def shutdown(self) -> None:
         self._executor.shutdown(wait=False, cancel_futures=True)
