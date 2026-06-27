@@ -206,13 +206,14 @@ class SteamReviewsService:
             it, _ = subs[0]
             return it.get("id"), it.get("name")
 
-        # 3) Strong fuzzy match only — avoid pairing "Pine" with "Pine Beat".
+        # 3) Fuzzy match — high enough to keep "… Extended Edition" type hits but
+        #    reject loosely-related names ("Pine" vs "Pine Beat" ~0.6).
         best, best_ratio = None, 0.0
         for it, raw, nm in cands:
             ratio = difflib.SequenceMatcher(None, target, nm).ratio()
             if ratio > best_ratio:
                 best, best_ratio = it, ratio
-        if best and best_ratio >= 0.85:
+        if best and best_ratio >= 0.72:
             return best.get("id"), best.get("name")
         return None, None
 
