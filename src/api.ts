@@ -8,6 +8,7 @@ import type {
   ProtonBuild,
   SavesStatus,
   ScoreEntry,
+  SteamReview,
 } from "./types";
 
 // --- health ----------------------------------------------------------------
@@ -34,6 +35,14 @@ export const getCachedScores = callable<[string[]], Record<string, ScoreEntry>>(
 export const refreshScores =
   callable<[{ app_name: string; title: string }[], boolean], { ok: boolean; refreshed?: number; error?: string }>(
     "refresh_scores",
+  );
+
+// --- steam reviews ---------------------------------------------------------
+export const getCachedSteamReviews =
+  callable<[string[]], Record<string, SteamReview>>("get_cached_steam_reviews");
+export const refreshSteamReviews =
+  callable<[{ app_name: string; title: string }[], boolean], { ok: boolean; refreshed?: number; error?: string }>(
+    "refresh_steam_reviews",
   );
 
 // --- downloads -------------------------------------------------------------
@@ -83,7 +92,9 @@ export type EventName =
   | "epic_launch_state"
   | "epic_saves_status"
   | "epic_rawg_progress"
-  | "epic_rawg_done";
+  | "epic_rawg_done"
+  | "epic_steam_progress"
+  | "epic_steam_done";
 
 /** Subscribe to a backend event; returns an unsubscribe fn. */
 export function subscribe<T = any>(event: EventName, cb: (payload: T) => void): () => void {

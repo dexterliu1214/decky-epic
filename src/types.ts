@@ -27,6 +27,14 @@ export interface ScoreEntry {
   fetched_at: number | null;
 }
 
+export interface SteamReview {
+  positive_pct: number | null;
+  total_reviews: number | null;
+  review_desc: string | null;
+  matched_name?: string | null;
+  fetched_at?: number | null;
+}
+
 export interface DownloadStatus {
   app_name: string;
   title?: string;
@@ -83,4 +91,4 @@ export interface ProtonBuild {
   tool_dir: string;
 }
 
-export type SortMode = "metacritic" | "title" | "installed";
+export type SortMode = "metacritic" | "steam" | "title" | "installed";

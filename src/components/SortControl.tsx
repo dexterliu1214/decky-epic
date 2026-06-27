@@ -3,6 +3,7 @@ import type { SortMode } from "../types";
 
 const OPTIONS: { data: SortMode; label: string }[] = [
   { data: "metacritic", label: "Metacritic ↓" },
+  { data: "steam", label: "Steam reviews ↓" },
   { data: "title", label: "Title A–Z" },
   { data: "installed", label: "Installed first" },
 ];

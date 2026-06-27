@@ -10,11 +10,12 @@ import { useAuth } from "../hooks/useAuth";
 import { useLibrary } from "../hooks/useLibrary";
 import { useOps } from "../hooks/useOps";
 import { gameRoute, SETTINGS_ROUTE } from "../routes";
-import type { GameSummary, SortMode } from "../types";
+import type { GameSummary, SortMode, SteamReview } from "../types";
 
 function sortGames(
   games: GameSummary[],
   scores: Record<string, number | null>,
+  steamReviews: Record<string, SteamReview>,
   mode: SortMode,
 ): GameSummary[] {
   const arr = [...games];
@@ -22,6 +23,15 @@ function sortGames(
     arr.sort((a, b) => a.title.localeCompare(b.title));
   } else if (mode === "installed") {
     arr.sort((a, b) => Number(b.installed) - Number(a.installed) || a.title.localeCompare(b.title));
+  } else if (mode === "steam") {
+    arr.sort((a, b) => {
+      const ra = steamReviews[a.app_name];
+      const rb = steamReviews[b.app_name];
+      const va = ra?.positive_pct ?? -1;
+      const vb = rb?.positive_pct ?? -1;
+      // Higher positive % first; break ties by review volume, then title.
+      return vb - va || (rb?.total_reviews ?? 0) - (ra?.total_reviews ?? 0) || a.title.localeCompare(b.title);
+    });
   } else {
     arr.sort((a, b) => {
       const sa = scores[a.app_name];
@@ -42,7 +52,7 @@ let savedQuery = "";
 
 export function LibraryPage() {
   const { status: auth, loading: authLoading } = useAuth();
-  const { games, scores, loading, error, reload } = useLibrary();
+  const { games, scores, steamReviews, loading, error, reload } = useLibrary();
   const { download } = useOps();
   const [sort, setSort] = useState<SortMode>(savedSort);
   const [query, setQuery] = useState(savedQuery);
@@ -70,8 +80,8 @@ export function LibraryPage() {
     const filtered = query
       ? games.filter((g) => g.title.toLowerCase().includes(query.toLowerCase()))
       : games;
-    return sortGames(filtered, scores, sort);
-  }, [games, scores, sort, query]);
+    return sortGames(filtered, scores, steamReviews, sort);
+  }, [games, scores, steamReviews, sort, query]);
 
   const loggedIn = auth?.logged_in;
 
@@ -145,6 +155,7 @@ export function LibraryPage() {
               key={g.app_name}
               game={g}
               score={scores[g.app_name]}
+              steamReview={steamReviews[g.app_name]}
               onActivate={() => Navigation.Navigate(gameRoute(g.app_name))}
             />
           ))}

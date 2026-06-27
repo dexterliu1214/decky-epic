@@ -1,8 +1,15 @@
 import type { CSSProperties } from "react";
 import { Focusable } from "@decky/ui";
-import { FaCloud, FaDownload } from "react-icons/fa";
-import type { GameSummary } from "../types";
+import { FaCloud, FaDownload, FaThumbsUp } from "react-icons/fa";
+import type { GameSummary, SteamReview } from "../types";
 import { MetacriticBadge } from "./MetacriticBadge";
+
+// Steam's review tiers, colour-coded the way the store does (blue = positive).
+function steamColor(pct: number): string {
+  if (pct >= 80) return "#66c0f4"; // positive (Steam blue)
+  if (pct >= 40) return "#b9a074"; // mixed
+  return "#a34c25"; // negative
+}
 
 // Dark rounded backing so the white/blue icons stay legible on light covers.
 const badgeStyle: CSSProperties = {
@@ -19,14 +26,17 @@ const badgeStyle: CSSProperties = {
 export function GameCard({
   game,
   score,
+  steamReview,
   onActivate,
   width = 150,
 }: {
   game: GameSummary;
   score: number | null | undefined;
+  steamReview?: SteamReview;
   onActivate: () => void;
   width?: number;
 }) {
+  const steamPct = steamReview?.positive_pct;
   const height = Math.round(width * 1.33);
   return (
     <Focusable
@@ -63,8 +73,26 @@ export function GameCard({
             {game.title}
           </div>
         )}
-        <div style={{ position: "absolute", top: 6, left: 6 }}>
+        <div style={{ position: "absolute", top: 6, left: 6, display: "flex", flexDirection: "column", gap: 4 }}>
           <MetacriticBadge score={score} />
+          {steamPct != null && (
+            <span
+              style={{
+                ...badgeStyle,
+                width: "auto",
+                padding: "0 6px",
+                gap: 4,
+                fontSize: 11,
+                fontWeight: 600,
+                color: steamColor(steamPct),
+              }}
+              title={`Steam: ${steamReview?.review_desc || ""}${
+                steamReview?.total_reviews ? ` (${steamReview.total_reviews.toLocaleString()})` : ""
+              }`}
+            >
+              <FaThumbsUp size={10} /> {steamPct}%
+            </span>
+          )}
         </div>
         <div style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 4 }}>
           {game.installed && (

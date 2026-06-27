@@ -10,6 +10,7 @@ from epic.core_service import EpicCore
 from epic.download_service import DownloadService
 from epic.launch_service import LaunchService
 from epic.rawg import RawgService
+from epic.steam_reviews import SteamReviewsService
 from epic.saves_service import SavesService
 from epic.settings_store import SettingsStore
 from epic import proton
@@ -28,6 +29,7 @@ class Plugin:
     settings: SettingsStore | None = None
     downloads: DownloadService | None = None
     rawg: RawgService | None = None
+    steam_reviews: SteamReviewsService | None = None
     saves: SavesService | None = None
     launcher: LaunchService | None = None
     _loop: asyncio.AbstractEventLoop | None = None
@@ -49,6 +51,7 @@ class Plugin:
         loop = asyncio.get_running_loop()
         self._loop = loop
         self.rawg = RawgService(self.settings)
+        self.steam_reviews = SteamReviewsService(self.settings)
         if self.core:
             self.downloads = DownloadService(self.core, loop, decky.emit)
             self.saves = SavesService(self.core, decky.emit)
@@ -62,6 +65,8 @@ class Plugin:
             self.downloads.shutdown()
         if self.rawg:
             self.rawg.shutdown()
+        if self.steam_reviews:
+            self.steam_reviews.shutdown()
         if self.core:
             self.core.close()
 
@@ -168,6 +173,17 @@ class Plugin:
         if not self.rawg:
             return {"ok": False, "error": "rawg not ready"}
         return await self.rawg.refresh(items, decky.emit, force=force)
+
+    # --- Steam reviews -------------------------------------------------------
+    async def get_cached_steam_reviews(self, app_names: list[str]) -> dict:
+        if not self.steam_reviews:
+            return {}
+        return self.steam_reviews.cached(app_names)
+
+    async def refresh_steam_reviews(self, items: list[dict], force: bool = False) -> dict:
+        if not self.steam_reviews:
+            return {"ok": False, "error": "steam reviews not ready"}
+        return await self.steam_reviews.refresh(items, decky.emit, force=force)
 
     # --- downloads -----------------------------------------------------------
     async def start_download(self, app_name: str, base_path: str = "", max_workers: int = 0) -> dict:
