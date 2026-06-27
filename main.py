@@ -192,33 +192,14 @@ class Plugin:
         return await self.core.update_status(app_name)
 
     async def game_description(self, app_name: str) -> dict:
-        """Localized title + synopsis for the detail page. Prefers Epic's catalog,
-        but Epic stores just the title as the "description" for most games, so
-        when there's no real synopsis there fall back to Steam's short
-        description (also localized)."""
+        """Localized title + synopsis for the detail page, from Epic's catalog
+        (longDescription, markup stripped). No Steam."""
         if not self.core:
             return {"ok": False, "description": "", "name": app_name, "source": "epic"}
         info = await self.core.description(app_name)
-        title = info.get("title") or app_name
         desc = info.get("description") or ""
-
-        def _real(d: str) -> bool:
-            # Epic uses the title as a placeholder description for many games.
-            return bool(d.strip()) and d.strip().lower() != title.strip().lower()
-
-        source = "epic"
-        if not _real(desc) and self.steam_reviews:
-            lang = str(self.settings.get("preferred_language", "english") or "english") if self.settings else "english"
-            try:
-                res = await self.steam_reviews.description(app_name, title, lang)
-                if res and res.get("description"):
-                    desc, source = res["description"], "steam"
-            except Exception:
-                decky.logger.exception("steam description fallback failed")
-
-        if not _real(desc):
-            desc = ""  # don't pass the bare title off as a synopsis
-        return {"ok": bool(desc), "description": desc, "name": title, "source": source}
+        return {"ok": bool(desc), "description": desc,
+                "name": info.get("title") or app_name, "source": "epic"}
 
     # --- downloads -----------------------------------------------------------
     async def start_download(self, app_name: str, base_path: str = "", max_workers: int = 0) -> dict:

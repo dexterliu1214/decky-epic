@@ -90,6 +90,22 @@ def _is_game(summary: dict) -> bool:
     return "games" in (summary.get("categories") or [])
 
 
+def _clean_long_desc(text: str) -> str:
+    """Strip Epic's longDescription markup down to readable plain text: it uses
+    HTML comment markers (<!--textBlock-->, <!--title-->, <!--text-->), markdown
+    headings, occasional HTML tags, and a "#NAME?" artifact in broken entries."""
+    if not text:
+        return ""
+    import re
+    t = re.sub(r"<!--.*?-->", "", text, flags=re.S)   # epic block markers
+    t = re.sub(r"<[^>]+>", "", t)                       # any stray HTML tags
+    t = re.sub(r"(?m)^\s*#NAME\?\s*$", "", t)           # broken-data artifact
+    t = re.sub(r"(?m)^\s*#+\s*", "", t)                 # markdown headings -> plain
+    t = re.sub(r"[ \t]+\n", "\n", t)                    # trailing spaces
+    t = re.sub(r"\n{3,}", "\n\n", t)                    # collapse blank runs
+    return t.strip()
+
+
 # Map our settings' Steam-style language codes to Epic catalog locale codes, so
 # game titles and descriptions come back localized straight from Epic.
 _EPIC_LOCALE = {
@@ -331,25 +347,12 @@ class EpicCore:
 
         return await self.run(_u)
 
-    def _catalog_text(self, ns: str, cid: str, locale: str) -> tuple:
-        """(title, description) from Epic's catalog at a specific locale. Swaps
-        the egs locale just for this call — safe because all core work runs on a
-        single locked executor."""
-        prev = self._core.egs.language_code
-        self._core.egs.language_code = locale
-        try:
-            info = self._core.egs.get_game_info(ns, cid, timeout=10.0) or {}
-            return info.get("title"), info.get("description")
-        except Exception as e:
-            _log.warning("catalog fetch (%s) failed: %r", locale, e)
-            return None, None
-        finally:
-            self._core.egs.language_code = prev
-
     async def description(self, app_name: str) -> dict:
-        """Localized title + synopsis from Epic's catalog (one lightweight query
-        at the configured locale). If the game has no description in that
-        language, fall back to fetching the English one."""
+        """Localized title + synopsis from Epic's catalog. Epic returns a rich
+        longDescription ("About this game") for many titles — prefer that
+        (markup stripped); otherwise use the short description when it's a real
+        sentence and not just the title. Epic itself falls back to English when
+        the configured locale has no text, so one query is enough."""
         def _d() -> dict:
             try:
                 g = self._core.get_game(app_name)
@@ -357,26 +360,22 @@ class EpicCore:
             except Exception:
                 return {"title": app_name, "description": ""}
             title = md.get("title") or app_name
-            desc = md.get("description") or ""
+            short = md.get("description") or ""
             ns, cid = md.get("namespace"), md.get("id")
+            long_desc = ""
             if ns and cid:
-                if self._locale != "en":
-                    loc_title, loc_desc = self._catalog_text(ns, cid, self._locale)
-                    title = loc_title or title
-                    if loc_desc:
-                        desc = loc_desc
-                    else:
-                        # No synopsis in the preferred language — use English.
-                        en_title, en_desc = self._catalog_text(ns, cid, "en")
-                        desc = en_desc or desc
-                        if not loc_title:
-                            title = en_title or title
-                elif not desc:
-                    # English preferred but the cache had no text — fetch it.
-                    en_title, en_desc = self._catalog_text(ns, cid, "en")
-                    title = en_title or title
-                    desc = en_desc or desc
-            return {"title": title, "description": desc}
+                try:
+                    info = self._core.egs.get_game_info(ns, cid, timeout=10.0) or {}
+                    title = info.get("title") or title
+                    short = info.get("description") or short
+                    long_desc = info.get("longDescription") or ""
+                except Exception as e:
+                    _log.warning("catalog fetch failed for %s: %r", app_name, e)
+
+            synopsis = _clean_long_desc(long_desc)
+            if not synopsis and short and short.strip().lower() != title.strip().lower():
+                synopsis = short.strip()
+            return {"title": title, "description": synopsis}
 
         return await self.run(_d)
 
