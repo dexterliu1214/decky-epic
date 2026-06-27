@@ -130,17 +130,18 @@ export function SettingsPage() {
       </section>
 
       <section style={{ marginBottom: 28 }}>
-        <h2 style={{ fontSize: 20 }}>Game synopsis</h2>
-        <Field label="Preferred language">
+        <h2 style={{ fontSize: 20 }}>Language</h2>
+        <Field label="Game info language">
           <Dropdown
             rgOptions={LANGUAGES.map((l) => ({ data: l.data, label: l.label }))}
-            selectedOption={settings?.preferred_language ?? "tchinese"}
+            selectedOption={settings?.preferred_language ?? "english"}
             onChange={(o) => save({ preferred_language: o.data as string })}
           />
         </Field>
         <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
-          Used for the description on a game's detail page. Falls back to English
-          when a game has no text in this language.
+          Sets the Epic catalog locale for a game's title &amp; description on its
+          detail page. Falls back to English when a game has no text in this
+          language.
         </div>
       </section>
 
