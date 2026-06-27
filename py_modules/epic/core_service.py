@@ -90,6 +90,28 @@ def _is_game(summary: dict) -> bool:
     return "games" in (summary.get("categories") or [])
 
 
+# Map our settings' Steam-style language codes to Epic catalog locale codes, so
+# game titles and descriptions come back localized straight from Epic.
+_EPIC_LOCALE = {
+    "english": "en",
+    "tchinese": "zh-Hant",
+    "schinese": "zh-Hans",
+    "japanese": "ja",
+    "koreana": "ko",
+    "french": "fr",
+    "german": "de",
+    "spanish": "es-ES",
+    "italian": "it",
+    "portuguese": "pt-BR",
+    "russian": "ru",
+    "thai": "th",
+}
+
+
+def epic_locale(steam_lang: str) -> str:
+    return _EPIC_LOCALE.get(steam_lang or "english", "en")
+
+
 class EpicCore:
     def __init__(self) -> None:
         paths.apply_legendary_env()
@@ -102,6 +124,16 @@ class EpicCore:
         self._core = LegendaryCore()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="legendary")
         self._lock = asyncio.Lock()
+        self._locale = "en"  # Epic catalog locale for titles/descriptions
+
+    def set_locale(self, steam_lang: str) -> None:
+        """Point legendary's Epic catalog queries at the user's language so the
+        library's titles and descriptions come back localized."""
+        loc = epic_locale(steam_lang)
+        self._locale = loc
+        # Epic wants language and country separately (e.g. zh-Hant / US).
+        self._core.language_code = loc
+        self._core.egs.language_code = loc
 
     @property
     def core(self):  # exposed for download/launch/saves services
@@ -183,12 +215,15 @@ class EpicCore:
             "categories": [c.get("path") for c in (md.get("categories") or [])],
         }
 
-    def _fetch_library_blocking(self) -> list[dict]:
+    def _fetch_library_blocking(self, force_meta: bool = False) -> list[dict]:
         try:
             self._core.login()
         except Exception as e:
             _log.warning("login during library fetch failed: %r", e)
-        games = self._core.get_game_list(update_assets=True)
+        # force_meta re-pulls every game's catalog metadata so titles and
+        # descriptions come back in the current locale (16-way parallel inside
+        # legendary, ~15s for the whole library).
+        games = self._core.get_game_and_dlc_list(update_assets=True, force_refresh=force_meta)[0]
         installed = {ig.app_name for ig in self._core.get_installed_list()}
         out = []
         for g in games:
@@ -207,19 +242,18 @@ class EpicCore:
         return games
 
     @staticmethod
-    def _read_library_cache() -> Optional[list[dict]]:
+    def _read_library_cache() -> Optional[dict]:
         try:
             with open(LIBRARY_CACHE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f).get("games")
+                return json.load(f)
         except Exception:
             return None
 
-    @staticmethod
-    def _write_library_cache(games: list[dict]) -> None:
+    def _write_library_cache(self, games: list[dict]) -> None:
         try:
             tmp = LIBRARY_CACHE_FILE.with_suffix(".json.tmp")
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"ts": time.time(), "games": games}, f)
+                json.dump({"ts": time.time(), "locale": self._locale, "games": games}, f)
             tmp.replace(LIBRARY_CACHE_FILE)
         except Exception as e:
             _log.warning("could not write library cache: %r", e)
@@ -228,10 +262,9 @@ class EpicCore:
         if not force_refresh:
             cached = self._read_library_cache()
             if cached:
-                # Cheap local refresh of just the installed flags.
-                games = await self.run(self._overlay_installed_blocking, cached)
+                games = await self.run(self._overlay_installed_blocking, cached.get("games") or [])
                 return [g for g in games if _is_game(g)]
-        games = await self.run(self._fetch_library_blocking)
+        games = await self.run(self._fetch_library_blocking, False)
         self._write_library_cache(games)
         return [g for g in games if _is_game(g)]
 
@@ -283,15 +316,28 @@ class EpicCore:
         return await self.run(_info)
 
     async def description(self, app_name: str) -> dict:
-        """Epic's own (usually English) synopsis + title, used as a fallback when
-        no localized Steam description is available."""
+        """Localized title + synopsis from Epic's catalog. Does ONE lightweight
+        catalog query at the configured locale (no achievements/manifests, which
+        is what makes a full library re-fetch rate-limit), falling back to the
+        cached (English) metadata if the query fails."""
         def _d() -> dict:
             try:
                 g = self._core.get_game(app_name)
                 md = getattr(g, "metadata", {}) or {}
             except Exception:
                 return {"title": app_name, "description": ""}
-            return {"title": md.get("title") or app_name, "description": md.get("description") or ""}
+            title = md.get("title") or app_name
+            desc = md.get("description") or ""
+            ns, cid = md.get("namespace"), md.get("id")
+            if ns and cid and self._locale != "en":
+                try:
+                    info = self._core.egs.get_game_info(ns, cid, timeout=10.0)
+                    if info:
+                        title = info.get("title") or title
+                        desc = info.get("description") or desc
+                except Exception as e:
+                    _log.warning("localized catalog fetch failed for %s: %r", app_name, e)
+            return {"title": title, "description": desc}
 
         return await self.run(_d)
 

@@ -41,6 +41,7 @@ class Plugin:
         self.settings = SettingsStore()
         try:
             self.core = EpicCore()
+            self.core.set_locale(str(self.settings.get("preferred_language", "english")))
             self.core_error = None
             decky.logger.info("decky-epic: legendary core ready")
         except Exception as e:
@@ -186,27 +187,14 @@ class Plugin:
         return await self.steam_reviews.refresh(items, decky.emit, force=force)
 
     async def game_description(self, app_name: str) -> dict:
-        """Synopsis for the detail page: Traditional-Chinese-first from Steam,
-        falling back to Epic's own description."""
-        info = {"title": app_name, "description": ""}
-        if self.core:
-            info = await self.core.description(app_name)
-        epic_title = info.get("title") or app_name
-        if self.steam_reviews:
-            lang = str(self.settings.get("preferred_language", "tchinese") or "tchinese") if self.settings else "tchinese"
-            try:
-                res = await self.steam_reviews.description(app_name, epic_title, lang)
-                if res and (res.get("description") or res.get("name")):
-                    return {
-                        "ok": True,
-                        "description": res.get("description") or info.get("description") or "",
-                        "name": res.get("name") or epic_title,
-                        "source": "steam",
-                    }
-            except Exception:
-                decky.logger.exception("steam description failed")
+        """Localized title + synopsis for the detail page, straight from Epic's
+        catalog (legendary localizes metadata to the configured language)."""
+        if not self.core:
+            return {"ok": False, "description": "", "name": app_name, "source": "epic"}
+        info = await self.core.description(app_name)
         desc = info.get("description") or ""
-        return {"ok": bool(desc), "description": desc, "name": epic_title, "source": "epic"}
+        return {"ok": bool(desc), "description": desc,
+                "name": info.get("title") or app_name, "source": "epic"}
 
     # --- downloads -----------------------------------------------------------
     async def start_download(self, app_name: str, base_path: str = "", max_workers: int = 0) -> dict:
@@ -266,7 +254,12 @@ class Plugin:
     async def set_settings(self, patch: dict) -> dict:
         if not self.settings:
             return {}
-        return self.settings.update(patch)
+        updated = self.settings.update(patch)
+        # Re-point Epic catalog queries when the language changes; the next
+        # library() call notices the locale mismatch and re-pulls localized data.
+        if "preferred_language" in patch and self.core:
+            self.core.set_locale(str(updated.get("preferred_language", "english")))
+        return updated
 
     async def list_proton_builds(self) -> list[dict]:
         return proton.discover_proton_builds()

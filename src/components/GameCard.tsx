@@ -45,7 +45,7 @@ export function GameCard({
   width?: number;
 }) {
   const steamPct = steamReview?.positive_pct;
-  const displayName = steamReview?.localized_name || game.title;
+  const displayName = game.title; // localized by Epic (legendary locale)
   const height = Math.round(width * 1.33);
   const ref = useRef<HTMLDivElement>(null);
 

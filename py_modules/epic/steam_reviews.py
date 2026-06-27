@@ -195,11 +195,10 @@ class SteamReviewsService:
         rev = self._fetch_reviews(appid)
         if rev is None:
             return None  # transient error — leave it for the next refresh
-        # English names are already the canonical title — only spend a request on
-        # a localized name when the user actually wants another language.
-        localized = self._localized_name(title, lang, appid) if lang and lang != "english" else None
+        # Localized names now come from Epic's own catalog, so Steam only owes us
+        # the review summary and genres here.
         genres = self._app_genres(appid)
-        return {"steam_appid": appid, "matched_name": matched, "localized_name": localized,
+        return {"steam_appid": appid, "matched_name": matched, "localized_name": None,
                 "name_lang": lang, "genres": genres, **rev}
 
     # -- public async surface ------------------------------------------------
@@ -217,8 +216,7 @@ class SteamReviewsService:
         for it in items:
             c = cached.get(it["app_name"])
             stale = (not c) or (now - (c.get("fetched_at") or 0) > ttl)
-            lang_changed = bool(c) and (c.get("name_lang") or "english") != lang
-            if force or stale or lang_changed:
+            if force or stale:
                 todo.append(it)
 
         loop = asyncio.get_running_loop()
