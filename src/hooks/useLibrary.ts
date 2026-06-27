@@ -66,6 +66,7 @@ export function useLibrary() {
             total_reviews: p.total_reviews,
             review_desc: p.review_desc,
             localized_name: p.localized_name,
+            genres: p.genres,
           },
         })),
     );

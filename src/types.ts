@@ -32,6 +32,7 @@ export interface SteamReview {
   total_reviews: number | null;
   review_desc: string | null;
   localized_name?: string | null;
+  genres?: string[] | null;
   matched_name?: string | null;
   fetched_at?: number | null;
 }

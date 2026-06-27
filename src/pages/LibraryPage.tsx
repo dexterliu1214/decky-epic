@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DialogButton, Focusable, Navigation, Spinner, TextField } from "@decky/ui";
+import { DialogButton, Dropdown, Focusable, Navigation, Spinner, TextField } from "@decky/ui";
 import { FaCog, FaSyncAlt } from "react-icons/fa";
 
 import { GameCard } from "../components/GameCard";
@@ -61,6 +61,7 @@ function sortGames(
 let savedScrollTop = 0;
 let savedSort: SortMode = "metacritic";
 let savedQuery = "";
+let savedGenre = "";
 let savedFocusApp: string | null = null;
 
 export function LibraryPage() {
@@ -69,16 +70,18 @@ export function LibraryPage() {
   const { download } = useOps();
   const [sort, setSort] = useState<SortMode>(savedSort);
   const [query, setQuery] = useState(savedQuery);
+  const [genre, setGenre] = useState(savedGenre);
   const scrollRef = useRef<HTMLDivElement>(null);
   // Capture the focus target once at mount so it doesn't shift as the user
   // moves focus around after we've restored it.
   const focusOnMount = useRef(savedFocusApp).current;
 
-  // Persist sort + search across navigation.
+  // Persist sort + search + genre across navigation.
   useEffect(() => {
     savedSort = sort;
     savedQuery = query;
-  }, [sort, query]);
+    savedGenre = genre;
+  }, [sort, query, genre]);
 
   // Restore the saved scroll position once the grid has rendered. Cards are a
   // fixed size, so the layout height is stable even before cover images load.
@@ -101,12 +104,27 @@ export function LibraryPage() {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   };
 
+  // Every genre present in the library (from Steam), for the filter dropdown.
+  const allGenres = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of games) for (const gn of steamReviews[g.app_name]?.genres ?? []) set.add(gn);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [games, steamReviews]);
+
+  const onGenreChange = (gn: string) => {
+    setGenre(gn);
+    savedFocusApp = null;
+    savedScrollTop = 0;
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  };
+
   const visible = useMemo(() => {
-    const filtered = query
+    let filtered = query
       ? games.filter((g) => g.title.toLowerCase().includes(query.toLowerCase()))
       : games;
+    if (genre) filtered = filtered.filter((g) => (steamReviews[g.app_name]?.genres ?? []).includes(genre));
     return sortGames(filtered, scores, steamReviews, sort);
-  }, [games, scores, steamReviews, sort, query]);
+  }, [games, scores, steamReviews, sort, query, genre]);
 
   const loggedIn = auth?.logged_in;
 
@@ -158,6 +176,19 @@ export function LibraryPage() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+        {allGenres.length > 0 && (
+          <div style={{ minWidth: 180 }}>
+            <Dropdown
+              rgOptions={[
+                { data: "", label: "All genres" },
+                ...allGenres.map((gn) => ({ data: gn, label: gn })),
+              ]}
+              selectedOption={genre}
+              onChange={(o) => onGenreChange(o.data as string)}
+              strDefaultLabel="Genre"
+            />
+          </div>
+        )}
         <SortControl value={sort} onChange={onSortChange} />
       </Focusable>
 

@@ -11,6 +11,7 @@ Mirrors RawgService so the two score sources behave identically.
 from __future__ import annotations
 
 import difflib
+import json
 import logging
 import sqlite3
 import threading
@@ -59,8 +60,8 @@ class SteamReviewsService:
                     fetched_at REAL
                 )"""
             )
-            # Migrations for the localized-name columns (older caches lack them).
-            for col in ("localized_name TEXT", "name_lang TEXT"):
+            # Migrations for columns older caches lack.
+            for col in ("localized_name TEXT", "name_lang TEXT", "genres TEXT"):
                 try:
                     c.execute(f"ALTER TABLE reviews ADD COLUMN {col}")
                 except sqlite3.OperationalError:
@@ -77,7 +78,7 @@ class SteamReviewsService:
             qmarks = ",".join("?" * len(app_names))
             for row in c.execute(
                 f"SELECT app_name, positive_pct, total_reviews, review_desc, matched_name, fetched_at, "
-                f"localized_name, name_lang FROM reviews WHERE app_name IN ({qmarks})",
+                f"localized_name, name_lang, genres FROM reviews WHERE app_name IN ({qmarks})",
                 app_names,
             ):
                 out[row[0]] = {
@@ -88,20 +89,22 @@ class SteamReviewsService:
                     "fetched_at": row[5],
                     "localized_name": row[6],
                     "name_lang": row[7],
+                    "genres": json.loads(row[8]) if row[8] else [],
                 }
         return out
 
-    def _upsert(self, app_name, title, appid, pct, total, desc, matched, localized, name_lang) -> None:
+    def _upsert(self, app_name, title, appid, pct, total, desc, matched, localized, name_lang, genres) -> None:
         with self._conn() as c:
             c.execute(
                 "INSERT INTO reviews(app_name,title,steam_appid,positive_pct,total_reviews,review_desc,"
-                "matched_name,fetched_at,localized_name,name_lang) VALUES(?,?,?,?,?,?,?,?,?,?) "
+                "matched_name,fetched_at,localized_name,name_lang,genres) VALUES(?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(app_name) DO UPDATE SET "
                 "title=excluded.title, steam_appid=excluded.steam_appid, positive_pct=excluded.positive_pct, "
                 "total_reviews=excluded.total_reviews, review_desc=excluded.review_desc, "
                 "matched_name=excluded.matched_name, fetched_at=excluded.fetched_at, "
-                "localized_name=excluded.localized_name, name_lang=excluded.name_lang",
-                (app_name, title, appid, pct, total, desc, matched, time.time(), localized, name_lang),
+                "localized_name=excluded.localized_name, name_lang=excluded.name_lang, genres=excluded.genres",
+                (app_name, title, appid, pct, total, desc, matched, time.time(), localized, name_lang,
+                 json.dumps(genres) if genres else None),
             )
 
     # -- Steam http ----------------------------------------------------------
@@ -163,21 +166,41 @@ class SteamReviewsService:
         return {"positive_pct": round(pos * 100 / total), "total_reviews": total,
                 "review_desc": qs.get("review_score_desc") or ""}
 
+    def _app_genres(self, appid: int) -> list:
+        """Steam genres (English, for stable filter keys), e.g. Action, RPG."""
+        import requests
+
+        self._throttle()
+        try:
+            r = requests.get(
+                "https://store.steampowered.com/api/appdetails",
+                params={"appids": appid, "l": "english"},
+                timeout=15,
+            )
+            d = (r.json() or {}).get(str(appid)) or {}
+            if not d.get("success"):
+                return []
+            return [g.get("description") for g in ((d.get("data") or {}).get("genres") or []) if g.get("description")]
+        except Exception as e:
+            _log.warning("Steam genres failed for %s: %r", appid, e)
+            return []
+
     def _fetch_one(self, title: str, lang: str = "english") -> Optional[dict]:
         appid, matched = self._resolve_appid(title)  # English search for reliable matching
         if not appid:
             # Record the miss so we don't keep re-searching every refresh.
             return {"steam_appid": None, "positive_pct": None, "total_reviews": 0,
                     "review_desc": "Not on Steam", "matched_name": None,
-                    "localized_name": None, "name_lang": lang}
+                    "localized_name": None, "name_lang": lang, "genres": []}
         rev = self._fetch_reviews(appid)
         if rev is None:
             return None  # transient error — leave it for the next refresh
         # English names are already the canonical title — only spend a request on
         # a localized name when the user actually wants another language.
         localized = self._localized_name(title, lang, appid) if lang and lang != "english" else None
-        return {"steam_appid": appid, "matched_name": matched,
-                "localized_name": localized, "name_lang": lang, **rev}
+        genres = self._app_genres(appid)
+        return {"steam_appid": appid, "matched_name": matched, "localized_name": localized,
+                "name_lang": lang, "genres": genres, **rev}
 
     # -- public async surface ------------------------------------------------
     async def refresh(self, items: list[dict], emit: EmitFn, force: bool = False) -> dict:
@@ -195,7 +218,10 @@ class SteamReviewsService:
             c = cached.get(it["app_name"])
             stale = (not c) or (now - (c.get("fetched_at") or 0) > ttl)
             lang_changed = bool(c) and (c.get("name_lang") or "english") != lang
-            if force or stale or lang_changed:
+            # Backfill genres into caches written before genre support, but only
+            # for games that are actually on Steam (a miss has steam_appid null).
+            needs_genres = bool(c) and not c.get("genres") and c.get("matched_name") is not None
+            if force or stale or lang_changed or needs_genres:
                 todo.append(it)
 
         loop = asyncio.get_running_loop()
@@ -206,7 +232,8 @@ class SteamReviewsService:
                 self._upsert(it["app_name"], it["title"], res.get("steam_appid"),
                              res.get("positive_pct"), res.get("total_reviews"),
                              res.get("review_desc"), res.get("matched_name"),
-                             res.get("localized_name"), res.get("name_lang"))
+                             res.get("localized_name"), res.get("name_lang"),
+                             res.get("genres"))
             done += 1
             await emit(EVT_PROGRESS, {
                 "app_name": it["app_name"],
@@ -214,6 +241,7 @@ class SteamReviewsService:
                 "total_reviews": (res or {}).get("total_reviews"),
                 "review_desc": (res or {}).get("review_desc"),
                 "localized_name": (res or {}).get("localized_name"),
+                "genres": (res or {}).get("genres"),
                 "done": done,
                 "total": len(todo),
             })
