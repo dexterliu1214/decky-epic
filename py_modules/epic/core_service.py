@@ -84,6 +84,12 @@ def _supports_cloud_saves(metadata: dict) -> bool:
     return bool(ca.get("CloudSaveFolder", {}).get("value"))
 
 
+def _is_game(summary: dict) -> bool:
+    """True for actual games. Epic libraries also carry Unreal Engine assets,
+    plugins, add-ons, and software — those lack the "games" category path."""
+    return "games" in (summary.get("categories") or [])
+
+
 class EpicCore:
     def __init__(self) -> None:
         paths.apply_legendary_env()
@@ -223,10 +229,11 @@ class EpicCore:
             cached = self._read_library_cache()
             if cached:
                 # Cheap local refresh of just the installed flags.
-                return await self.run(self._overlay_installed_blocking, cached)
+                games = await self.run(self._overlay_installed_blocking, cached)
+                return [g for g in games if _is_game(g)]
         games = await self.run(self._fetch_library_blocking)
         self._write_library_cache(games)
-        return games
+        return [g for g in games if _is_game(g)]
 
     async def installed(self) -> list[dict]:
         def _list() -> list[dict]:
