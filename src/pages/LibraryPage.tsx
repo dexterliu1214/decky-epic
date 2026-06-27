@@ -12,6 +12,20 @@ import { useOps } from "../hooks/useOps";
 import { gameRoute, SETTINGS_ROUTE } from "../routes";
 import type { GameSummary, SortMode, SteamReview } from "../types";
 
+// Wilson lower bound of the positive ratio: balances how positive a game is
+// against how many reviews back that up, so a 100%-from-8-reviews game doesn't
+// outrank a 99%-from-20k one. Returns -1 when there are no usable reviews.
+function steamRank(r?: SteamReview): number {
+  const n = r?.total_reviews ?? 0;
+  if (r?.positive_pct == null || n <= 0) return -1;
+  const p = r.positive_pct / 100;
+  const z = 1.96;
+  const denom = 1 + (z * z) / n;
+  const center = p + (z * z) / (2 * n);
+  const margin = z * Math.sqrt((p * (1 - p) + (z * z) / (4 * n)) / n);
+  return (center - margin) / denom;
+}
+
 function sortGames(
   games: GameSummary[],
   scores: Record<string, number | null>,
@@ -25,12 +39,9 @@ function sortGames(
     arr.sort((a, b) => Number(b.installed) - Number(a.installed) || a.title.localeCompare(b.title));
   } else if (mode === "steam") {
     arr.sort((a, b) => {
-      const ra = steamReviews[a.app_name];
-      const rb = steamReviews[b.app_name];
-      const va = ra?.positive_pct ?? -1;
-      const vb = rb?.positive_pct ?? -1;
-      // Higher positive % first; break ties by review volume, then title.
-      return vb - va || (rb?.total_reviews ?? 0) - (ra?.total_reviews ?? 0) || a.title.localeCompare(b.title);
+      const va = steamRank(steamReviews[a.app_name]);
+      const vb = steamRank(steamReviews[b.app_name]);
+      return vb - va || a.title.localeCompare(b.title);
     });
   } else {
     arr.sort((a, b) => {
