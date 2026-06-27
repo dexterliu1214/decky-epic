@@ -221,6 +221,7 @@ export function GameDetailPage() {
     <Focusable
       // A Focusable scroll container lets the controller scroll the whole page,
       // not just hop between the focusable rows (a plain div won't scroll).
+      flow-children="vertical"
       style={{ marginTop: 40, padding: "0 28px 28px", height: "100%", overflowY: "scroll" }}
     >
       <DialogButton
@@ -306,7 +307,10 @@ export function GameDetailPage() {
       </Focusable>
 
       {description && (
-        <Focusable style={{ marginTop: 22, fontSize: 15, lineHeight: 1.6, opacity: 0.9, maxWidth: 900 }}>
+        <Focusable
+          onActivate={() => undefined}
+          style={{ marginTop: 22, fontSize: 15, lineHeight: 1.6, opacity: 0.9, maxWidth: 900 }}
+        >
           {description}
         </Focusable>
       )}
