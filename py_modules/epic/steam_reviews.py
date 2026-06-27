@@ -13,6 +13,7 @@ from __future__ import annotations
 import difflib
 import json
 import logging
+import re
 import sqlite3
 import threading
 import time
@@ -31,6 +32,48 @@ EVT_DONE = "epic_steam_done"
 STORE_SEARCH = "https://store.steampowered.com/api/storesearch/"
 APP_REVIEWS = "https://store.steampowered.com/appreviews/{appid}"
 _MIN_INTERVAL = 0.5  # be gentle with the public Steam store endpoints
+
+# Multi-character Roman numerals -> their integer string, so "Shenmue 3" and
+# "Shenmue III" compare equal. Single letters (i/v/x) are excluded — too often
+# real words or parts of a name.
+_ROMAN_TO_INT = {
+    "ii": "2", "iii": "3", "iv": "4", "vi": "6", "vii": "7", "viii": "8",
+    "ix": "9", "xi": "11", "xii": "12", "xiii": "13",
+}
+
+
+def _sequel_nums(normalized: str) -> set:
+    """Sequel/version numbers that distinguish two games, with Roman numerals
+    folded to digits: {'2'} for "the outer worlds 2", {'3'} for both "shenmue 3"
+    and "shenmue iii", {} for "the outer worlds"."""
+    out = set()
+    for t in normalized.split():
+        if t.isdigit():
+            out.add(t)
+        elif t in _ROMAN_TO_INT:
+            out.add(_ROMAN_TO_INT[t])
+    return out
+
+
+# Drop disambiguating release years like "(2016)" before matching.
+_YEAR_RE = re.compile(r"\((?:19|20)\d{2}\)")
+# Search hits that aren't the game itself.
+_NON_GAME_RE = re.compile(
+    r"\b(soundtrack|ost|demo|trailer|art\s?book|season\s?pass|wallpaper|upgrade|"
+    r"prologue|playtest|beta)\b",
+    re.IGNORECASE,
+)
+
+
+def _title_score(target: str, name: str) -> float:
+    """How well a normalized Steam name matches the normalized target title.
+    Exact wins; a subtitle/edition suffix ("toem" vs "toem a photo adventure")
+    still scores high; otherwise fall back to a fuzzy ratio."""
+    if target == name:
+        return 1.0
+    if name.startswith(target + " ") or target.startswith(name + " "):
+        return 0.9
+    return difflib.SequenceMatcher(None, target, name).ratio()
 
 
 class SteamReviewsService:
@@ -131,14 +174,25 @@ class SteamReviewsService:
             return None, None
 
         target = _normalize(title)
+        target_nums = _sequel_nums(target)
         best, best_key = None, (-1.0, 0)
         for it in items:
-            ratio = difflib.SequenceMatcher(None, target, _normalize(it.get("name", ""))).ratio()
-            key = (ratio, -len(it.get("name", "")))  # prefer base game over editions
+            raw = it.get("name", "")
+            if _NON_GAME_RE.search(raw):
+                continue  # soundtrack / demo / DLC, not the game
+            name_norm = _normalize(_YEAR_RE.sub("", raw))
+            # A differing sequel number means a different game: "The Outer Worlds"
+            # must not match "The Outer Worlds 2".
+            if _sequel_nums(name_norm) != target_nums:
+                continue
+            score = _title_score(target, name_norm)
+            key = (score, -len(raw))  # higher score, then prefer the shorter name
             if key > best_key:
                 best, best_key = it, key
-        if not best or best_key[0] < 0.5:
-            best = items[0]
+        # No confident, same-numbering match — return nothing rather than risk a
+        # wrong game (better to show no Steam data than another title's).
+        if not best or best_key[0] < 0.6:
+            return None, None
         return best.get("id"), best.get("name")
 
     def _fetch_reviews(self, appid: int) -> Optional[dict]:
