@@ -11,10 +11,9 @@ Run it with the repo dev venv (which has the real legendary installed):
     .venv\\Scripts\\python.exe scripts\\devtools\\dev_harness.py login <authorizationCode>
     .venv\\Scripts\\python.exe scripts\\devtools\\dev_harness.py library
     .venv\\Scripts\\python.exe scripts\\devtools\\dev_harness.py saves <AppName>
-    .venv\\Scripts\\python.exe scripts\\devtools\\dev_harness.py rawg <RAWG_KEY> "Hades" "Control"
 
 On Windows, legendary resolves cloud-save paths via %LOCALAPPDATA% etc. directly
-(no Proton), so auth + library + RAWG + cloud-save *logic* are all testable here.
+(no Proton), so auth + library + cloud-save *logic* are all testable here.
 Launch is Linux/Proton-only and is expected to report "no Proton" on Windows.
 """
 from __future__ import annotations
@@ -155,13 +154,6 @@ async def cmd_sync(plugin, app, direction):
     print(await plugin.sync_saves(app, direction, False, False))
 
 
-async def cmd_rawg(plugin, key, titles):
-    await plugin.set_settings({"rawg_api_key": key})
-    items = [{"app_name": f"app{i}", "title": t} for i, t in enumerate(titles or ["Hades", "Control", "Hollow Knight"])]
-    print(await plugin.refresh_scores(items, True))
-    print("cached:", await plugin.get_cached_scores([i["app_name"] for i in items]))
-
-
 async def main_async(argv):
     cmd = argv[0] if argv else "validate"
     rest = argv[1:]
@@ -187,8 +179,6 @@ async def main_async(argv):
             await cmd_saves(plugin, rest[0])
         elif cmd == "sync":
             await cmd_sync(plugin, rest[0], rest[1] if len(rest) > 1 else "both")
-        elif cmd == "rawg":
-            await cmd_rawg(plugin, rest[0], rest[1:])
         elif cmd == "proton":
             print(await plugin.list_proton_builds())
         elif cmd == "logout":

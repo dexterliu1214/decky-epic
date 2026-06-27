@@ -1,7 +1,7 @@
 "use strict";
 
 const state = {
-  games: [], scores: {}, settings: {}, auth: { logged_in: false },
+  games: [], settings: {}, auth: { logged_in: false },
   running: { running: false, app_name: null }, download: null, loginUrl: "#",
   selected: null, saves: {},
 };
@@ -23,12 +23,6 @@ function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove("show"), 2600);
 }
 
-function mcColor(s) {
-  if (s == null) return "#4b5563";
-  if (s >= 75) return "#16a34a";
-  if (s >= 50) return "#d9a521";
-  return "#dc2626";
-}
 function fmtBytes(n) {
   if (!n) return "0 B";
   const u = ["B", "KiB", "MiB", "GiB", "TiB"]; let i = 0;
@@ -47,7 +41,6 @@ async function loadState() {
 async function loadLibrary(refresh = false) {
   const data = await api(`/api/library?refresh=${refresh ? 1 : 0}`);
   state.games = data.games || [];
-  state.scores = data.scores || {};
   renderGrid();
 }
 
@@ -69,12 +62,8 @@ function renderOp() {
 function sortGames(list) {
   const mode = $("sort").value;
   const arr = [...list];
-  if (mode === "title") arr.sort((a, b) => a.title.localeCompare(b.title));
-  else if (mode === "installed") arr.sort((a, b) => (b.installed - a.installed) || a.title.localeCompare(b.title));
-  else arr.sort((a, b) => {
-    const va = state.scores[a.app_name] ?? -1, vb = state.scores[b.app_name] ?? -1;
-    return vb - va || a.title.localeCompare(b.title);
-  });
+  if (mode === "installed") arr.sort((a, b) => (b.installed - a.installed) || a.title.localeCompare(b.title));
+  else arr.sort((a, b) => a.title.localeCompare(b.title));
   return arr;
 }
 
@@ -84,7 +73,6 @@ function renderGrid() {
   const grid = $("grid");
   grid.innerHTML = "";
   for (const g of sortGames(filtered)) {
-    const score = state.scores[g.app_name];
     const card = document.createElement("div");
     card.className = "card";
     card.onclick = () => openDetail(g.app_name);
@@ -94,18 +82,11 @@ function renderGrid() {
     const flags = [g.installed ? '<span class="chip">⬇</span>' : "",
                    g.cloud_saves ? '<span class="chip">☁</span>' : ""].join("");
     card.innerHTML = `${cover}
-      <div class="badge" data-app="${g.app_name}" style="background:${mcColor(score)}">${score == null ? "–" : score}</div>
       <div class="flags">${flags}</div>
       <div class="title">${g.title}</div>`;
     grid.appendChild(card);
   }
   renderOp();
-}
-
-function updateBadge(app, score) {
-  state.scores[app] = score;
-  const el = document.querySelector(`.badge[data-app="${CSS.escape(app)}"]`);
-  if (el) { el.textContent = score == null ? "–" : score; el.style.background = mcColor(score); }
 }
 
 // ---- detail modal ----
@@ -128,7 +109,6 @@ function renderDetail() {
   const app = state.selected;
   if (!app) return;
   const g = state.games.find((x) => x.app_name === app);
-  const score = state.scores[app];
   const d = state.download && state.download.app_name === app ? state.download : null;
   const downloading = d && d.state === "downloading";
   const runningThis = state.running.running && state.running.app_name === app;
@@ -169,8 +149,7 @@ function renderDetail() {
     <div class="row" style="align-items:flex-start; gap:18px">
       ${g.cover ? `<img src="${g.cover}" style="width:170px;border-radius:8px" />` : ""}
       <div style="flex:1; min-width:240px">
-        <div class="row"><h2>${g.title}</h2>
-          <span class="badge" style="position:static;background:${mcColor(score)}">${score == null ? "–" : score}</span></div>
+        <div class="row"><h2>${g.title}</h2></div>
         <div class="muted">${app}</div>
         <div class="row" style="margin-top:16px">${actions}</div>
         ${progress}
@@ -220,7 +199,6 @@ function startEvents() {
       } else if (payload.state === "error") toast("Download error: " + (payload.error || ""));
       renderOp(); if (state.selected === payload.app_name) { openDetail(payload.app_name); }
     }
-    else if (event === "epic_rawg_progress") updateBadge(payload.app_name, payload.metacritic);
     else if (event === "epic_launch_state") {
       state.running = { running: !["exited", "error"].includes(payload.state), app_name: payload.app_name };
       if (payload.state === "syncing_down") toast("Syncing cloud save…");
@@ -243,13 +221,12 @@ $("authSubmit").onclick = async () => {
   else toast("Sign-in failed: " + (r.error || ""));
 };
 $("settingsBtn").onclick = () => {
-  $("setRawg").value = state.settings.rawg_api_key || "";
   $("setPath").value = state.settings.install_base_path || "";
   $("settingsOverlay").classList.add("show");
 };
 $("settingsClose").onclick = () => $("settingsOverlay").classList.remove("show");
 $("settingsSave").onclick = async () => {
-  state.settings = await api("/api/settings", "POST", { rawg_api_key: $("setRawg").value.trim(), install_base_path: $("setPath").value.trim() });
+  state.settings = await api("/api/settings", "POST", { install_base_path: $("setPath").value.trim() });
   toast("Saved"); $("settingsOverlay").classList.remove("show"); loadLibrary(false);
 };
 $("logoutBtn").onclick = async () => { await api("/api/auth/logout", "POST", {}); $("settingsOverlay").classList.remove("show"); await loadState(); state.games = []; renderGrid(); };

@@ -4,8 +4,6 @@ import { toaster } from "@decky/api";
 import { FaCloud, FaCloudDownloadAlt, FaCloudUploadAlt, FaDownload, FaPlay, FaStop, FaThumbsUp, FaTrash } from "react-icons/fa";
 
 import { DownloadProgress } from "../components/DownloadProgress";
-import { MetacriticBadge } from "../components/MetacriticBadge";
-import { RawgAttribution } from "../components/RawgAttribution";
 import {
   cancelDownload,
   checkUpdate,
@@ -19,7 +17,7 @@ import {
 } from "../api";
 import { launchAppViaSteam, removeShortcutForApp, terminateSteamGame, watchGameLifetime } from "../steam";
 import { useOps } from "../hooks/useOps";
-import { getCachedGame, getCachedScore, setCachedInstalled } from "../state/libraryCache";
+import { getCachedGame, setCachedInstalled } from "../state/libraryCache";
 import { currentAppName, LIBRARY_ROUTE } from "../routes";
 import type { SavesStatus, SteamReview } from "../types";
 
@@ -42,7 +40,6 @@ const LAUNCH_LABEL: Record<string, string> = {
 export function GameDetailPage() {
   const appName = currentAppName();
   const game = getCachedGame(appName);
-  const score = getCachedScore(appName);
   const { download, launch } = useOps();
 
   const [installed, setInstalled] = useState<boolean>(game?.installed ?? false);
@@ -239,7 +236,6 @@ export function GameDetailPage() {
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <h1 style={{ margin: 0, fontSize: 28 }}>{title}</h1>
-            <MetacriticBadge score={score} size={34} />
           </div>
           {steamReview?.positive_pct != null && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
@@ -351,8 +347,6 @@ export function GameDetailPage() {
           )}
         </div>
       )}
-
-      <RawgAttribution />
     </Focusable>
     </ScrollPanelGroup>
   );

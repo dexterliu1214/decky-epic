@@ -1,7 +1,7 @@
 {
   "name": "decky-epic",
   "version": "0.1.0",
-  "description": "Download and play Epic Games Store titles on Steam Deck with Epic cloud-save sync, a Steam-like library, and Metacritic sorting.",
+  "description": "Download and play Epic Games Store titles on Steam Deck with Epic cloud-save sync, a Steam-like library, and Steam-review sorting.",
   "type": "module",
   "scripts": {
     "build": "shx rm -rf dist && rollup -c",

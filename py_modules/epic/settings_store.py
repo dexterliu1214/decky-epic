@@ -52,11 +52,10 @@ def _detect_language() -> str:
 
 
 DEFAULTS: dict[str, Any] = {
-    "rawg_api_key": "",
     "install_base_path": str(paths.DEFAULT_INSTALL_DIR),
     "preferred_proton": "",
     "max_workers": 0,
-    "metacritic_cache_ttl_days": 14,
+    "reviews_cache_ttl_days": 14,
     # Game title/synopsis language (Steam-style code). Defaults to the SteamOS /
     # Steam-client language; the user can override it in Settings.
     "preferred_language": _detect_language(),

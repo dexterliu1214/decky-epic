@@ -2,7 +2,6 @@ import { useEffect, useRef, type CSSProperties } from "react";
 import { Focusable } from "@decky/ui";
 import { FaCloud, FaDownload, FaThumbsUp } from "react-icons/fa";
 import type { GameSummary, SteamReview } from "../types";
-import { MetacriticBadge } from "./MetacriticBadge";
 
 // Steam's review tiers, colour-coded the way the store does (blue = positive).
 function steamColor(pct: number): string {
@@ -25,7 +24,6 @@ const badgeStyle: CSSProperties = {
 
 export function GameCard({
   game,
-  score,
   steamReview,
   onActivate,
   onFocus,
@@ -34,7 +32,6 @@ export function GameCard({
   width = 150,
 }: {
   game: GameSummary;
-  score: number | null | undefined;
   steamReview?: SteamReview;
   onActivate: () => void;
   onFocus?: () => void;
@@ -98,7 +95,6 @@ export function GameCard({
           </div>
         )}
         <div style={{ position: "absolute", top: 6, left: 6, display: "flex", flexDirection: "column", gap: 4 }}>
-          <MetacriticBadge score={score} />
           {steamPct != null && (
             <span
               style={{

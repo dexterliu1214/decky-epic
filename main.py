@@ -9,7 +9,6 @@ import decky
 from epic.core_service import EpicCore
 from epic.download_service import DownloadService
 from epic.launch_service import LaunchService
-from epic.rawg import RawgService
 from epic.steam_reviews import SteamReviewsService
 from epic.saves_service import SavesService
 from epic.settings_store import SettingsStore
@@ -28,7 +27,6 @@ class Plugin:
     core_error: str | None = None
     settings: SettingsStore | None = None
     downloads: DownloadService | None = None
-    rawg: RawgService | None = None
     steam_reviews: SteamReviewsService | None = None
     saves: SavesService | None = None
     launcher: LaunchService | None = None
@@ -51,7 +49,6 @@ class Plugin:
 
         loop = asyncio.get_running_loop()
         self._loop = loop
-        self.rawg = RawgService(self.settings)
         self.steam_reviews = SteamReviewsService(self.settings)
         if self.core:
             self.downloads = DownloadService(self.core, loop, decky.emit)
@@ -64,8 +61,6 @@ class Plugin:
             self._pairing.stop()
         if self.downloads:
             self.downloads.shutdown()
-        if self.rawg:
-            self.rawg.shutdown()
         if self.steam_reviews:
             self.steam_reviews.shutdown()
         if self.core:
@@ -163,17 +158,6 @@ class Plugin:
         if self.settings:
             self.settings.remove_shortcut_id(app_name)
         return {"ok": True}
-
-    # --- metacritic / RAWG ---------------------------------------------------
-    async def get_cached_scores(self, app_names: list[str]) -> dict:
-        if not self.rawg:
-            return {}
-        return self.rawg.cached(app_names)
-
-    async def refresh_scores(self, items: list[dict], force: bool = False) -> dict:
-        if not self.rawg:
-            return {"ok": False, "error": "rawg not ready"}
-        return await self.rawg.refresh(items, decky.emit, force=force)
 
     # --- Steam reviews -------------------------------------------------------
     async def get_cached_steam_reviews(self, app_names: list[str]) -> dict:

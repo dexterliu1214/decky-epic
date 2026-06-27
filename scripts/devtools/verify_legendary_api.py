@@ -83,7 +83,7 @@ ec.close()
 
 import importlib
 for mod in ["epic.download_service", "epic.saves_service", "epic.launch_service",
-            "epic.proton", "epic.prefix", "epic.rawg", "epic.settings_store"]:
+            "epic.proton", "epic.prefix", "epic.steam_reviews", "epic.settings_store"]:
     importlib.import_module(mod)
     print(f"  imported {mod}")
 

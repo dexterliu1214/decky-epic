@@ -3,13 +3,11 @@
 A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin for the
 Steam Deck that downloads and plays **Epic Games Store** titles — with **Epic
 cloud-save sync as the headline feature**, a Steam-like browsing UI, and
-Metacritic-style sorting.
+Steam-review sorting.
 
 It uses [`legendary`](https://github.com/legendary-gl/legendary) as the Epic
 engine (vendored into `py_modules`), reuses Steam's installed Proton builds to
-run games, and pulls critic scores from [RAWG](https://rawg.io) (cached locally).
-
-> Critic-score data provided by RAWG.io.
+run games, and pulls Steam review scores for browsing (cached locally).
 
 ## Status
 
@@ -19,7 +17,7 @@ remaining step — see *Testing on a Steam Deck* below.
 - **M0** Scaffold (build + empty plugin loads) ✅
 - **M1** Vendor legendary + backend boot ✅
 - **M2** Epic auth (phone-assisted QR + paste authorization code) ✅ *(impl)*
-- **M3** Library list + RAWG Metacritic scores/sort ✅ *(impl)*
+- **M3** Library list + Steam review scores/sort ✅ *(impl)*
 - **M4** Download with Steam-like progress ✅ *(impl)*
 - **M5** Proton discovery + launch ✅ *(impl)*
 - **M6** Cloud saves around launch (top priority) ✅ *(impl)*
@@ -28,9 +26,9 @@ remaining step — see *Testing on a Steam Deck* below.
 ## Windows GUI (desktop app)
 
 A full graphical version runs on Windows over the **same backend** (`main.Plugin`
-+ real legendary). It serves a Steam-like web UI — cover-art grid, Metacritic
-sort/search, install with live progress, native game launch, and cloud-save
-sync — as a local app:
++ real legendary). It serves a Steam-like web UI — cover-art grid, sort/search,
+install with live progress, native game launch, and cloud-save sync — as a
+local app:
 
 ```powershell
 pwsh -File scripts/run_gui.ps1
@@ -38,7 +36,7 @@ pwsh -File scripts/run_gui.ps1
 
 This creates the dev venv (real legendary), installs `fastapi`/`uvicorn` on first
 run, starts the server, and opens `http://127.0.0.1:8777`. Sign in (paste the
-Epic `authorizationCode`), add a RAWG key in Settings, then browse/install/play.
+Epic `authorizationCode`), then browse/install/play.
 On Windows games launch natively (no Proton) and cloud saves resolve via
 `%LOCALAPPDATA%`, so the cloud-save round-trip is fully usable here.
 
@@ -48,8 +46,8 @@ Files: `webgui/server.py` (FastAPI + SSE), `webgui/static/{index.html,app.js}`.
 
 Decky only runs on Linux, but the backend is plain Python + legendary, which
 runs natively on Windows. A one-shot script validates everything verifiable
-locally — legendary API conformance, RAWG logic, the real `Plugin` RPC
-lifecycle, and the frontend build/type-check:
+locally — legendary API conformance, the real `Plugin` RPC lifecycle, and the
+frontend build/type-check:
 
 ```powershell
 pwsh -File scripts/verify_windows.ps1
@@ -64,7 +62,6 @@ also drive the backend interactively against your own Epic account on Windows
 .venv\Scripts\python.exe scripts\devtools\dev_harness.py library
 .venv\Scripts\python.exe scripts\devtools\dev_harness.py download <AppName>
 .venv\Scripts\python.exe scripts\devtools\dev_harness.py sync <AppName> both
-.venv\Scripts\python.exe scripts\devtools\dev_harness.py rawg <RAWG_KEY> "Hades" "Control"
 ```
 
 ## Signing in to Epic
@@ -96,9 +93,9 @@ real browser: open `legendary.gl/epiclogin`, sign in, and paste the
 3. `DECK_HOST=deck@<deck-ip> bash scripts/deploy_to_deck.sh`
 4. On the Deck: `cd ~/homebrew/plugins/decky-epic && python3 scripts/smoke_backend.py`
    to confirm the vendored backend + Proton discovery work.
-5. Open Decky → Epic → Settings: sign in (paste the Epic `authorizationCode`),
-   add a RAWG API key. Then browse the Library, install a small game, and
-   Play it — saves download before launch and upload after exit.
+5. Open Decky → Epic → Settings: sign in (paste the Epic `authorizationCode`).
+   Then browse the Library, install a small game, and Play it — saves download
+   before launch and upload after exit.
 
 ## Development
 

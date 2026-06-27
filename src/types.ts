@@ -21,12 +21,6 @@ export interface InstalledGame {
   install_size: number;
 }
 
-export interface ScoreEntry {
-  metacritic: number | null;
-  matched_name: string | null;
-  fetched_at: number | null;
-}
-
 export interface SteamReview {
   positive_pct: number | null;
   total_reviews: number | null;
@@ -80,11 +74,10 @@ export interface SavesStatus {
 }
 
 export interface PluginSettings {
-  rawg_api_key: string;
   install_base_path: string;
   preferred_proton: string;
   max_workers: number;
-  metacritic_cache_ttl_days: number;
+  reviews_cache_ttl_days: number;
   preferred_language: string;
 }
 
@@ -94,4 +87,4 @@ export interface ProtonBuild {
   tool_dir: string;
 }
 
-export type SortMode = "metacritic" | "steam" | "title" | "installed";
+export type SortMode = "steam" | "title" | "installed";

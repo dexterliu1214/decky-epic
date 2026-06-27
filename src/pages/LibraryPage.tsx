@@ -5,7 +5,6 @@ import { FaCog, FaSyncAlt } from "react-icons/fa";
 import { GameCard } from "../components/GameCard";
 import { SortControl } from "../components/SortControl";
 import { DownloadProgress } from "../components/DownloadProgress";
-import { RawgAttribution } from "../components/RawgAttribution";
 import { useAuth } from "../hooks/useAuth";
 import { useLibrary } from "../hooks/useLibrary";
 import { useOps } from "../hooks/useOps";
@@ -29,7 +28,6 @@ function steamRank(r?: SteamReview): number {
 
 function sortGames(
   games: GameSummary[],
-  scores: Record<string, number | null>,
   steamReviews: Record<string, SteamReview>,
   mode: SortMode,
 ): GameSummary[] {
@@ -38,18 +36,10 @@ function sortGames(
     arr.sort((a, b) => a.title.localeCompare(b.title));
   } else if (mode === "installed") {
     arr.sort((a, b) => Number(b.installed) - Number(a.installed) || a.title.localeCompare(b.title));
-  } else if (mode === "steam") {
+  } else {
     arr.sort((a, b) => {
       const va = steamRank(steamReviews[a.app_name]);
       const vb = steamRank(steamReviews[b.app_name]);
-      return vb - va || a.title.localeCompare(b.title);
-    });
-  } else {
-    arr.sort((a, b) => {
-      const sa = scores[a.app_name];
-      const sb = scores[b.app_name];
-      const va = sa == null ? -1 : sa;
-      const vb = sb == null ? -1 : sb;
       return vb - va || a.title.localeCompare(b.title);
     });
   }
@@ -60,14 +50,14 @@ function sortGames(
 // page and navigate back — restoring scroll, sort, search, and gamepad focus
 // instead of resetting.
 let savedScrollTop = 0;
-let savedSort: SortMode = "metacritic";
+let savedSort: SortMode = "steam";
 let savedQuery = "";
 let savedGenre = "";
 let savedFocusApp: string | null = null;
 
 export function LibraryPage() {
   const { status: auth, loading: authLoading } = useAuth();
-  const { games, scores, steamReviews, genres, loading, error, reload } = useLibrary();
+  const { games, steamReviews, genres, loading, error, reload } = useLibrary();
   const { download } = useOps();
   const refreshing = useRefreshProgress();
   const [sort, setSort] = useState<SortMode>(savedSort);
@@ -130,8 +120,8 @@ export function LibraryPage() {
       ? games.filter((g) => g.title.toLowerCase().includes(query.toLowerCase()))
       : games;
     if (genre) filtered = filtered.filter((g) => (genres[g.app_name] ?? []).includes(genre));
-    return sortGames(filtered, scores, steamReviews, sort);
-  }, [games, scores, steamReviews, genres, sort, query, genre]);
+    return sortGames(filtered, steamReviews, sort);
+  }, [games, steamReviews, genres, sort, query, genre]);
 
   const loggedIn = auth?.logged_in;
 
@@ -201,7 +191,7 @@ export function LibraryPage() {
 
       {/* Fixed-height slot so the grid never shifts as this appears/disappears. */}
       <div style={{ height: 28, marginBottom: 12, display: "flex", alignItems: "center" }}>
-        {(refreshing.steam || refreshing.rawg || refreshing.genres) && (
+        {(refreshing.steam || refreshing.genres) && (
           <div
             style={{
               display: "flex",
@@ -220,7 +210,6 @@ export function LibraryPage() {
               {[
                 refreshing.steam && `Steam reviews ${refreshing.steam.done}/${refreshing.steam.total}`,
                 refreshing.genres && `Genres ${refreshing.genres.done}/${refreshing.genres.total}`,
-                refreshing.rawg && `Metacritic ${refreshing.rawg.done}/${refreshing.rawg.total}`,
               ]
                 .filter(Boolean)
                 .join("  ·  ")}
@@ -250,7 +239,6 @@ export function LibraryPage() {
             <GameCard
               key={g.app_name}
               game={g}
-              score={scores[g.app_name]}
               steamReview={steamReviews[g.app_name]}
               autoFocus={g.app_name === focusOnMount}
               focusSignal={idx === 0 ? focusTopSignal : undefined}
@@ -266,8 +254,6 @@ export function LibraryPage() {
       {!loading && visible.length === 0 && loggedIn && (
         <div style={{ opacity: 0.7, padding: 24 }}>No games found.</div>
       )}
-
-      <RawgAttribution />
     </div>
   );
 }

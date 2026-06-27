@@ -40,7 +40,7 @@ PREFIXES_DIR = _env_dir("DECKY_EPIC_PREFIXES", RUNTIME_DIR / "prefixes")
 # Default install location for games (user-overridable in settings).
 DEFAULT_INSTALL_DIR = USER_HOME / "Games" / "decky-epic"
 
-# Local caches (RAWG scores, etc.).
+# Local caches (Steam reviews, Epic genres, etc.).
 CACHE_DIR = _env_dir("DECKY_EPIC_CACHE", SETTINGS_DIR / "cache")
 
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"

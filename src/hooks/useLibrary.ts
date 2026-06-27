@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   getCachedGenres,
-  getCachedScores,
   getCachedSteamReviews,
   listLibrary,
   refreshGenres,
-  refreshScores,
   refreshSteamReviews,
   subscribe,
 } from "../api";
@@ -14,7 +12,6 @@ import type { GameSummary, SteamReview } from "../types";
 
 export function useLibrary() {
   const [games, setGames] = useState<GameSummary[]>([]);
-  const [scores, setScores] = useState<Record<string, number | null>>({});
   const [steamReviews, setSteamReviews] = useState<Record<string, SteamReview>>({});
   const [genres, setGenres] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
@@ -29,16 +26,10 @@ export function useLibrary() {
       const appNames = lib.map((g) => g.app_name);
       const items = lib.map((g) => ({ app_name: g.app_name, title: g.title }));
 
-      const cached = await getCachedScores(appNames);
-      const map: Record<string, number | null> = {};
-      for (const [k, v] of Object.entries(cached)) map[k] = v.metacritic;
-      setScores(map);
-
       setSteamReviews(await getCachedSteamReviews(appNames));
       setGenres(await getCachedGenres(appNames));
 
       // Kick throttled background refreshes; all update live via events.
-      void refreshScores(items, false);
       void refreshSteamReviews(items, false);
       void refreshGenres(items, false);
     } catch (e) {
@@ -51,14 +42,6 @@ export function useLibrary() {
   useEffect(() => {
     void load(false);
   }, [load]);
-
-  useEffect(() => {
-    const off = subscribe<{ app_name: string; metacritic: number | null }>(
-      "epic_rawg_progress",
-      (p) => setScores((prev) => ({ ...prev, [p.app_name]: p.metacritic })),
-    );
-    return off;
-  }, []);
 
   useEffect(() => {
     const off = subscribe<{ app_name: string } & SteamReview>(
@@ -86,8 +69,8 @@ export function useLibrary() {
   }, []);
 
   useEffect(() => {
-    setLibraryCache(games, scores);
-  }, [games, scores]);
+    setLibraryCache(games);
+  }, [games]);
 
-  return { games, scores, steamReviews, genres, loading, error, reload: load, setGames };
+  return { games, steamReviews, genres, loading, error, reload: load, setGames };
 }

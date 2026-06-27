@@ -1,7 +1,6 @@
 {
-  "rawg_api_key": "",
   "install_base_path": "",
   "preferred_proton": "",
   "max_workers": 0,
-  "metacritic_cache_ttl_days": 14
+  "reviews_cache_ttl_days": 14
 }

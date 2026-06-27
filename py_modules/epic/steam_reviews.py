@@ -5,14 +5,13 @@ public store search endpoint, then cache its review summary (positive %, total
 review count, descriptive tier like "Very Positive"). The library sort serves
 entirely off the cache; a throttled background refresh fills in missing/stale
 entries and emits progress so the UI updates live.
-
-Mirrors RawgService so the two score sources behave identically.
 """
 from __future__ import annotations
 
 import difflib
 import json
 import logging
+import re
 import sqlite3
 import threading
 import time
@@ -20,9 +19,24 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Awaitable, Callable, Optional
 
 from . import paths
-from .rawg import _normalize  # reuse the edition/trademark-stripping title normaliser
 
 _log = logging.getLogger("decky-epic.steam")
+
+_EDITION_RE = re.compile(
+    r"\b(deluxe|ultimate|definitive|complete|game of the year|goty|gold|"
+    r"standard|premium|enhanced|remastered|director'?s cut|edition|bundle)\b",
+    re.IGNORECASE,
+)
+_TRADE_RE = re.compile(r"[™®©]")
+
+
+def _normalize(title: str) -> str:
+    """Strip edition suffixes / trademark glyphs so fuzzy title matching lines
+    up an Epic title with its Steam app."""
+    t = _TRADE_RE.sub("", title or "")
+    t = _EDITION_RE.sub("", t)
+    t = re.sub(r"[^a-z0-9]+", " ", t.lower())
+    return t.strip()
 
 EmitFn = Callable[[str, dict], Awaitable[None]]
 EVT_PROGRESS = "epic_steam_progress"
@@ -68,7 +82,7 @@ class SteamReviewsService:
                     pass  # column already exists
 
     def _ttl_seconds(self) -> float:
-        return float(self.settings.get("metacritic_cache_ttl_days", 14)) * 86400.0
+        return float(self.settings.get("reviews_cache_ttl_days", 14)) * 86400.0
 
     def cached(self, app_names: list[str]) -> dict[str, dict]:
         if not app_names:

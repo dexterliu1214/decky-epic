@@ -5,7 +5,7 @@
   "api_version": 1,
   "publish": {
     "tags": ["epic", "games", "launcher", "downloader", "cloud-save"],
-    "description": "Download and play Epic Games Store titles on Steam Deck with Epic cloud-save sync, a Steam-like library, and Metacritic sorting.",
+    "description": "Download and play Epic Games Store titles on Steam Deck with Epic cloud-save sync, a Steam-like library, and Steam-review sorting.",
     "image": "https://raw.githubusercontent.com/dexterliu1214/decky-epic/main/assets/logo.png"
   }
 }

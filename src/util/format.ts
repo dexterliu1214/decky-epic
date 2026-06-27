@@ -24,10 +24,3 @@ export function formatEta(seconds: number | null | undefined): string {
   if (m > 0) return `${m}m ${sec}s`;
   return `${sec}s`;
 }
-
-export function metacriticColor(score: number | null | undefined): string {
-  if (score == null) return "#4b5563"; // gray
-  if (score >= 75) return "#16a34a"; // green
-  if (score >= 50) return "#d9a521"; // yellow
-  return "#dc2626"; // red
-}

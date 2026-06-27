@@ -7,7 +7,6 @@ import type {
   PluginSettings,
   ProtonBuild,
   SavesStatus,
-  ScoreEntry,
   SteamReview,
 } from "./types";
 
@@ -29,13 +28,6 @@ export const authStopPairing = callable<[], { ok: boolean }>("auth_stop_pairing"
 // --- library ---------------------------------------------------------------
 export const listLibrary = callable<[boolean], GameSummary[]>("list_library");
 export const listInstalled = callable<[], InstalledGame[]>("list_installed");
-
-// --- metacritic ------------------------------------------------------------
-export const getCachedScores = callable<[string[]], Record<string, ScoreEntry>>("get_cached_scores");
-export const refreshScores =
-  callable<[{ app_name: string; title: string }[], boolean], { ok: boolean; refreshed?: number; error?: string }>(
-    "refresh_scores",
-  );
 
 // --- steam reviews ---------------------------------------------------------
 export const getCachedSteamReviews =
@@ -106,8 +98,6 @@ export type EventName =
   | "epic_download_state"
   | "epic_launch_state"
   | "epic_saves_status"
-  | "epic_rawg_progress"
-  | "epic_rawg_done"
   | "epic_steam_progress"
   | "epic_steam_done"
   | "epic_genre_progress"

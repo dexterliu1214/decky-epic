@@ -32,7 +32,6 @@ export function SettingsPage() {
   const { settings, save } = useSettings();
   const [submitting, setSubmitting] = useState(false);
   const [protons, setProtons] = useState<ProtonBuild[]>([]);
-  const [rawgKey, setRawgKey] = useState("");
   const [installPath, setInstallPath] = useState("");
 
   useEffect(() => {
@@ -41,7 +40,6 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (settings) {
-      setRawgKey(settings.rawg_api_key || "");
       setInstallPath(settings.install_base_path || "");
     }
   }, [settings]);
@@ -96,21 +94,6 @@ export function SettingsPage() {
             }}
           />
         )}
-      </section>
-
-      <section style={{ marginBottom: 28 }}>
-        <h2 style={{ fontSize: 20 }}>Metacritic (RAWG)</h2>
-        <TextField
-          label="RAWG API key"
-          value={rawgKey}
-          onChange={(e) => setRawgKey(e.target.value)}
-        />
-        <div style={{ fontSize: 12, opacity: 0.7, margin: "4px 0 8px" }}>
-          Get a free key at rawg.io/apidocs. Required for critic scores &amp; sorting.
-        </div>
-        <DialogButton style={{ width: 160 }} onClick={() => save({ rawg_api_key: rawgKey.trim() })}>
-          Save key
-        </DialogButton>
       </section>
 
       <section style={{ marginBottom: 28 }}>

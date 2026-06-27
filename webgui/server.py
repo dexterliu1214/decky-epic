@@ -126,19 +126,7 @@ async def auth_logout():
 @app.get("/api/library")
 async def library(refresh: int = 0):
     games = await plugin.list_library(bool(refresh))
-    cached = await plugin.get_cached_scores([g["app_name"] for g in games])
-    scores = {k: v.get("metacritic") for k, v in cached.items()}
-    # kick a background score refresh; updates arrive via SSE
-    asyncio.create_task(
-        plugin.refresh_scores([{"app_name": g["app_name"], "title": g["title"]} for g in games], False)
-    )
-    return {"games": games, "scores": scores}
-
-
-@app.post("/api/scores/refresh")
-async def scores_refresh(req: Request):
-    body = await req.json()
-    return await plugin.refresh_scores(body.get("items", []), bool(body.get("force", False)))
+    return {"games": games}
 
 
 @app.post("/api/download/start")
