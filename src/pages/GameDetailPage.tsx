@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DialogButton, Focusable, Navigation, Spinner } from "@decky/ui";
 import { toaster } from "@decky/api";
-import { FaCloud, FaCloudDownloadAlt, FaCloudUploadAlt, FaPlay, FaStop, FaThumbsUp, FaTrash } from "react-icons/fa";
+import { FaCloud, FaCloudDownloadAlt, FaCloudUploadAlt, FaDownload, FaPlay, FaStop, FaThumbsUp, FaTrash } from "react-icons/fa";
 
 import { DownloadProgress } from "../components/DownloadProgress";
 import { MetacriticBadge } from "../components/MetacriticBadge";
 import { RawgAttribution } from "../components/RawgAttribution";
 import {
   cancelDownload,
+  checkUpdate,
   gameDescription,
   getCachedSteamReviews,
   savesStatus,
@@ -54,6 +55,18 @@ export function GameDetailPage() {
   const [steamReview, setSteamReview] = useState<SteamReview | null>(null);
   const [description, setDescription] = useState<string | null>(null);
   const [localizedName, setLocalizedName] = useState<string | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  // Check for a newer Epic build whenever the game is installed.
+  useEffect(() => {
+    if (!appName || !installed) {
+      setUpdateAvailable(false);
+      return;
+    }
+    void checkUpdate(appName)
+      .then((r) => setUpdateAvailable(!!r.update_available))
+      .catch(() => undefined);
+  }, [appName, installed]);
 
   // Pull the cached Steam review (populated by the library's background refresh).
   useEffect(() => {
@@ -265,12 +278,22 @@ export function GameDetailPage() {
                 <FaStop /> &nbsp;Stop
               </DialogButton>
             )}
+            {installed && updateAvailable && !isThisDownloading && (
+              <DialogButton disabled={busy} onClick={doInstall} style={{ width: 180 }}>
+                <FaDownload /> &nbsp;Update
+              </DialogButton>
+            )}
             {installed && (
               <DialogButton disabled={busy} onClick={doUninstall} style={{ width: 180 }}>
                 <FaTrash /> &nbsp;Uninstall
               </DialogButton>
             )}
           </Focusable>
+          {installed && updateAvailable && (
+            <div style={{ marginTop: 8, color: "#fbbf24", fontSize: 13 }}>
+              An update is available.
+            </div>
+          )}
         </div>
       </Focusable>
 

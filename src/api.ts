@@ -55,6 +55,10 @@ export const startDownload =
 export const cancelDownload = callable<[string], { ok: boolean; error?: string }>("cancel_download");
 export const downloadStatus = callable<[], DownloadStatus | null>("download_status");
 export const uninstallGame = callable<[string], { ok: boolean; error?: string }>("uninstall_game");
+export const checkUpdate =
+  callable<[string], { installed: boolean; update_available: boolean; version?: string; error?: string }>(
+    "check_update",
+  );
 
 // --- launch + saves --------------------------------------------------------
 export const launchGame = callable<[string], { ok: boolean; pid?: number; error?: string }>("launch_game");

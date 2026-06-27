@@ -315,6 +315,22 @@ class EpicCore:
 
         return await self.run(_info)
 
+    async def update_status(self, app_name: str) -> dict:
+        """Whether an installed game has a newer build on Epic. Refreshes the
+        asset list (light) and compares build versions via legendary."""
+        def _u() -> dict:
+            ig = self._core.get_installed_game(app_name)
+            if not ig:
+                return {"installed": False, "update_available": False}
+            try:
+                latest = self._core.is_latest(app_name)
+                return {"installed": True, "update_available": not latest, "version": ig.version}
+            except Exception as e:
+                _log.warning("update check failed for %s: %r", app_name, e)
+                return {"installed": True, "update_available": False, "error": f"{e}"}
+
+        return await self.run(_u)
+
     async def description(self, app_name: str) -> dict:
         """Localized title + synopsis from Epic's catalog. Does ONE lightweight
         catalog query at the configured locale (no achievements/manifests, which

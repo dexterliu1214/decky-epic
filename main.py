@@ -186,6 +186,11 @@ class Plugin:
             return {"ok": False, "error": "steam reviews not ready"}
         return await self.steam_reviews.refresh(items, decky.emit, force=force)
 
+    async def check_update(self, app_name: str) -> dict:
+        if not self.core:
+            return {"installed": False, "update_available": False}
+        return await self.core.update_status(app_name)
+
     async def game_description(self, app_name: str) -> dict:
         """Localized title + synopsis for the detail page, straight from Epic's
         catalog (legendary localizes metadata to the configured language)."""
