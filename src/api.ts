@@ -44,6 +44,13 @@ export const refreshSteamReviews =
   callable<[{ app_name: string; title: string }[], boolean], { ok: boolean; refreshed?: number; error?: string }>(
     "refresh_steam_reviews",
   );
+
+// --- genres (Epic) ---------------------------------------------------------
+export const getCachedGenres = callable<[string[]], Record<string, string[]>>("get_cached_genres");
+export const refreshGenres =
+  callable<[{ app_name: string; title: string }[], boolean], { ok: boolean; refreshed?: number; error?: string }>(
+    "refresh_genres",
+  );
 export const gameDescription =
   callable<[string], { ok: boolean; description?: string; name?: string; source?: "steam" | "epic" }>(
     "game_description",
@@ -102,7 +109,9 @@ export type EventName =
   | "epic_rawg_progress"
   | "epic_rawg_done"
   | "epic_steam_progress"
-  | "epic_steam_done";
+  | "epic_steam_done"
+  | "epic_genre_progress"
+  | "epic_genre_done";
 
 /** Subscribe to a backend event; returns an unsubscribe fn. */
 export function subscribe<T = any>(event: EventName, cb: (payload: T) => void): () => void {

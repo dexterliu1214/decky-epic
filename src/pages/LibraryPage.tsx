@@ -67,7 +67,7 @@ let savedFocusApp: string | null = null;
 
 export function LibraryPage() {
   const { status: auth, loading: authLoading } = useAuth();
-  const { games, scores, steamReviews, loading, error, reload } = useLibrary();
+  const { games, scores, steamReviews, genres, loading, error, reload } = useLibrary();
   const { download } = useOps();
   const refreshing = useRefreshProgress();
   const [sort, setSort] = useState<SortMode>(savedSort);
@@ -113,12 +113,12 @@ export function LibraryPage() {
     resetView();
   };
 
-  // Every genre present in the library (from Steam), for the filter dropdown.
+  // Every genre present in the library (from Epic), for the filter dropdown.
   const allGenres = useMemo(() => {
     const set = new Set<string>();
-    for (const g of games) for (const gn of steamReviews[g.app_name]?.genres ?? []) set.add(gn);
+    for (const g of games) for (const gn of genres[g.app_name] ?? []) set.add(gn);
     return [...set].sort((a, b) => a.localeCompare(b));
-  }, [games, steamReviews]);
+  }, [games, genres]);
 
   const onGenreChange = (gn: string) => {
     setGenre(gn);
@@ -129,9 +129,9 @@ export function LibraryPage() {
     let filtered = query
       ? games.filter((g) => g.title.toLowerCase().includes(query.toLowerCase()))
       : games;
-    if (genre) filtered = filtered.filter((g) => (steamReviews[g.app_name]?.genres ?? []).includes(genre));
+    if (genre) filtered = filtered.filter((g) => (genres[g.app_name] ?? []).includes(genre));
     return sortGames(filtered, scores, steamReviews, sort);
-  }, [games, scores, steamReviews, sort, query, genre]);
+  }, [games, scores, steamReviews, genres, sort, query, genre]);
 
   const loggedIn = auth?.logged_in;
 
@@ -201,7 +201,7 @@ export function LibraryPage() {
 
       {/* Fixed-height slot so the grid never shifts as this appears/disappears. */}
       <div style={{ height: 28, marginBottom: 12, display: "flex", alignItems: "center" }}>
-        {(refreshing.steam || refreshing.rawg) && (
+        {(refreshing.steam || refreshing.rawg || refreshing.genres) && (
           <div
             style={{
               display: "flex",
@@ -217,10 +217,14 @@ export function LibraryPage() {
           >
             <Spinner style={{ width: 16, height: 16 }} />
             <span>
-              {refreshing.steam &&
-                `Fetching Steam reviews & genres… ${refreshing.steam.done}/${refreshing.steam.total}`}
-              {refreshing.steam && refreshing.rawg && "  ·  "}
-              {refreshing.rawg && `Fetching Metacritic scores… ${refreshing.rawg.done}/${refreshing.rawg.total}`}
+              {[
+                refreshing.steam && `Steam reviews ${refreshing.steam.done}/${refreshing.steam.total}`,
+                refreshing.genres && `Genres ${refreshing.genres.done}/${refreshing.genres.total}`,
+                refreshing.rawg && `Metacritic ${refreshing.rawg.done}/${refreshing.rawg.total}`,
+              ]
+                .filter(Boolean)
+                .join("  ·  ")}
+              {" "}…
             </span>
           </div>
         )}

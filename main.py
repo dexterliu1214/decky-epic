@@ -186,6 +186,17 @@ class Plugin:
             return {"ok": False, "error": "steam reviews not ready"}
         return await self.steam_reviews.refresh(items, decky.emit, force=force)
 
+    # --- genres (Epic Store) -------------------------------------------------
+    async def get_cached_genres(self, app_names: list[str]) -> dict:
+        if not self.core:
+            return {}
+        return self.core.cached_genres(app_names)
+
+    async def refresh_genres(self, items: list[dict], force: bool = False) -> dict:
+        if not self.core:
+            return {"ok": False, "error": "backend not ready"}
+        return await self.core.refresh_genres(items, decky.emit, force=force)
+
     async def check_update(self, app_name: str) -> dict:
         if not self.core:
             return {"installed": False, "update_available": False}

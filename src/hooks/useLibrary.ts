@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  getCachedGenres,
   getCachedScores,
   getCachedSteamReviews,
   listLibrary,
+  refreshGenres,
   refreshScores,
   refreshSteamReviews,
   subscribe,
@@ -14,6 +16,7 @@ export function useLibrary() {
   const [games, setGames] = useState<GameSummary[]>([]);
   const [scores, setScores] = useState<Record<string, number | null>>({});
   const [steamReviews, setSteamReviews] = useState<Record<string, SteamReview>>({});
+  const [genres, setGenres] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,10 +35,12 @@ export function useLibrary() {
       setScores(map);
 
       setSteamReviews(await getCachedSteamReviews(appNames));
+      setGenres(await getCachedGenres(appNames));
 
-      // Kick throttled background refreshes; both update live via events.
+      // Kick throttled background refreshes; all update live via events.
       void refreshScores(items, false);
       void refreshSteamReviews(items, false);
+      void refreshGenres(items, false);
     } catch (e) {
       setError(`${e}`);
     } finally {
@@ -66,9 +71,16 @@ export function useLibrary() {
             total_reviews: p.total_reviews,
             review_desc: p.review_desc,
             localized_name: p.localized_name,
-            genres: p.genres,
           },
         })),
+    );
+    return off;
+  }, []);
+
+  useEffect(() => {
+    const off = subscribe<{ app_name: string; genres: string[] }>(
+      "epic_genre_progress",
+      (p) => setGenres((prev) => ({ ...prev, [p.app_name]: p.genres || [] })),
     );
     return off;
   }, []);
@@ -77,5 +89,5 @@ export function useLibrary() {
     setLibraryCache(games, scores);
   }, [games, scores]);
 
-  return { games, scores, steamReviews, loading, error, reload: load, setGames };
+  return { games, scores, steamReviews, genres, loading, error, reload: load, setGames };
 }

@@ -23,6 +23,7 @@ _log = logging.getLogger("decky-epic.core")
 # ~10s network round-trip every time. The "installed" flag is re-overlaid live
 # from the local installed list, so only purchases/removals need a refresh.
 LIBRARY_CACHE_FILE = paths.CACHE_DIR / "library.json"
+GENRE_CACHE_FILE = paths.CACHE_DIR / "genres.json"
 
 EPIC_LOGIN_URL = "https://legendary.gl/epiclogin"
 
@@ -120,6 +121,9 @@ _STORE_GRAPHQL = "https://store.epicgames.com/graphql"
 _STORE_CONTENT = "https://store-content.ak.epicgames.com/api/{locale}/content/products/{slug}"
 _SLUG_QUERY = ('query($ns:String!){Catalog{catalogNs(namespace:$ns){'
               'mappings(pageType:"productHome"){pageSlug}}}}')
+# Epic Store offer tags carry genres (groupName == "genre"), e.g. Action, RPG.
+_GENRE_QUERY = ('query($ns:String!){Catalog{catalogOffers(namespace:$ns,params:{count:1}){'
+                'elements{tags{name groupName}}}}}')
 # Epic catalog locale -> Epic Store content locale.
 _STORE_LOCALE = {
     "en": "en-US", "zh-Hant": "zh-Hant", "zh-Hans": "zh-CN", "ja": "ja", "ko": "ko",
@@ -452,6 +456,79 @@ class EpicCore:
             return {"title": title, "description": desc}
 
         return await self.run(_d)
+
+    # -- genres (Epic Store offer tags) --------------------------------------
+    def _epic_genres(self, namespace: str) -> list:
+        """Genre names from the Epic Store offer tags (groupName == 'genre')."""
+        try:
+            r = self._core.egs.session.get(
+                _STORE_GRAPHQL,
+                params={"query": _GENRE_QUERY, "variables": json.dumps({"ns": namespace})},
+                timeout=10,
+            )
+            els = (((r.json().get("data") or {}).get("Catalog") or {}).get("catalogOffers") or {}).get("elements") or []
+            if not els:
+                return []
+            tags = els[0].get("tags") or []
+            return sorted({t.get("name") for t in tags if t.get("groupName") == "genre" and t.get("name")})
+        except Exception as e:
+            _log.warning("epic genres failed for %s: %r", namespace, e)
+            return []
+
+    def _genres_for_app(self, app_name: str) -> list:
+        try:
+            g = self._core.get_game(app_name)
+            ns = (getattr(g, "metadata", {}) or {}).get("namespace")
+        except Exception:
+            ns = None
+        return self._epic_genres(ns) if ns else []
+
+    @staticmethod
+    def _read_genre_cache() -> dict:
+        try:
+            with open(GENRE_CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _write_genre_cache(data: dict) -> None:
+        try:
+            tmp = GENRE_CACHE_FILE.with_suffix(".json.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            tmp.replace(GENRE_CACHE_FILE)
+        except Exception as e:
+            _log.warning("could not write genre cache: %r", e)
+
+    def cached_genres(self, app_names: list) -> dict:
+        cache = self._read_genre_cache()
+        return {a: (cache.get(a) or {}).get("genres", []) for a in app_names if a in cache}
+
+    async def refresh_genres(self, items: list, emit, force: bool = False) -> dict:
+        """Fetch missing/stale Epic genres for each game (namespace -> Store offer
+        tags), caching to genres.json and emitting progress. Each lookup runs as
+        its own locked executor task so it interleaves with other core work."""
+        cache = self._read_genre_cache()
+        ttl = 30 * 86400  # genres rarely change
+        now = time.time()
+        todo = [it for it in items
+                if force or it["app_name"] not in cache
+                or (now - (cache[it["app_name"]].get("fetched_at") or 0) > ttl)]
+        done = 0
+        for it in todo:
+            app = it["app_name"]
+            genres = await self.run(self._genres_for_app, app)
+            cache[app] = {"genres": genres, "fetched_at": time.time()}
+            done += 1
+            if done % 20 == 0:
+                self._write_genre_cache(cache)
+            await emit("epic_genre_progress",
+                       {"app_name": app, "genres": genres, "done": done, "total": len(todo)})
+        if todo:
+            self._write_genre_cache(cache)
+        await emit("epic_genre_done", {"ok": True, "refreshed": len(todo)})
+        return {"ok": True, "refreshed": len(todo)}
 
     async def artwork_b64(self, app_name: str) -> dict:
         """Download the game's Epic art, base64-encoded, so the frontend can set
