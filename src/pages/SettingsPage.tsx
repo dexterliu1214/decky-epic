@@ -71,7 +71,7 @@ export function SettingsPage() {
   };
 
   return (
-    <div style={{ marginTop: 40, padding: "0 28px 28px", height: "100%", overflowY: "scroll" }}>
+    <div style={{ padding: "40px 28px 28px", height: "100%", boxSizing: "border-box", overflowY: "scroll" }}>
       <DialogButton style={{ width: 120, marginBottom: 16 }} onClick={() => Navigation.Navigate(LIBRARY_ROUTE)}>
         ← Library
       </DialogButton>
@@ -98,16 +98,13 @@ export function SettingsPage() {
 
       <section style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: 20 }}>Install location</h2>
-        <TextField label="Base install path" value={installPath} onChange={(e) => setInstallPath(e.target.value)} />
+        <TextField label="Base install path" value={installPath} disabled />
         <div style={{ fontSize: 12, opacity: 0.7, margin: "4px 0 8px" }}>
           Every game installs into its own folder under this directory.
         </div>
         <Focusable style={{ display: "flex", gap: 12, marginTop: 8 }}>
           <DialogButton style={{ width: 160 }} onClick={browseInstallPath}>
             Browse…
-          </DialogButton>
-          <DialogButton style={{ width: 160 }} onClick={() => save({ install_base_path: installPath.trim() })}>
-            Save path
           </DialogButton>
         </Focusable>
       </section>

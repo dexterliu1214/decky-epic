@@ -131,7 +131,7 @@ export function LibraryPage() {
       onScroll={(e) => {
         savedScrollTop = e.currentTarget.scrollTop;
       }}
-      style={{ marginTop: 40, padding: "0 28px 28px", height: "100%", overflowY: "scroll" }}
+      style={{ padding: "40px 28px 28px", height: "100%", boxSizing: "border-box", overflowY: "scroll" }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <h1 style={{ margin: 0, fontSize: 26 }}>Epic Library</h1>

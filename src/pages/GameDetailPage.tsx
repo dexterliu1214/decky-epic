@@ -9,6 +9,7 @@ import {
   checkUpdate,
   gameDescription,
   getCachedSteamReviews,
+  refreshSteamReviews,
   savesStatus,
   startDownload,
   steamLaunchInfo,
@@ -65,13 +66,25 @@ export function GameDetailPage() {
       .catch(() => undefined);
   }, [appName, installed]);
 
-  // Pull the cached Steam review (populated by the library's background refresh).
+  // Show the cached Steam review immediately, then force a fresh fetch for just
+  // this game (reviews drift over time) and re-read the cache when it lands.
   useEffect(() => {
     if (!appName) return;
-    void getCachedSteamReviews([appName])
-      .then((m) => setSteamReview(m[appName] ?? null))
-      .catch(() => undefined);
-  }, [appName]);
+    let cancelled = false;
+    const apply = (m: Record<string, SteamReview>) => {
+      if (!cancelled) setSteamReview(m[appName] ?? null);
+    };
+    void getCachedSteamReviews([appName]).then(apply).catch(() => undefined);
+    if (game?.title) {
+      void refreshSteamReviews([{ app_name: appName, title: game.title }], true)
+        .then(() => getCachedSteamReviews([appName]))
+        .then(apply)
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [appName, game?.title]);
 
   // Fetch the synopsis + localized name (preferred-language, from Steam).
   useEffect(() => {
