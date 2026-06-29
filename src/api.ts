@@ -1,5 +1,6 @@
 import { callable, addEventListener, removeEventListener } from "@decky/api";
 import type {
+  AchievementsResult,
   AuthStatus,
   DownloadStatus,
   GameSummary,
@@ -47,6 +48,7 @@ export const gameDescription =
   callable<[string], { ok: boolean; description?: string; name?: string; source?: "steam" | "epic" }>(
     "game_description",
   );
+export const gameAchievements = callable<[string], AchievementsResult>("game_achievements");
 
 // --- downloads -------------------------------------------------------------
 export const startDownload =

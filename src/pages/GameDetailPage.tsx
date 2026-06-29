@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DialogButton, Focusable, Navigation, ScrollPanelGroup, Spinner } from "@decky/ui";
 import { toaster } from "@decky/api";
-import { FaCloud, FaCloudDownloadAlt, FaCloudUploadAlt, FaDownload, FaPlay, FaStop, FaThumbsUp, FaTrash } from "react-icons/fa";
+import { FaCloud, FaCloudDownloadAlt, FaCloudUploadAlt, FaDownload, FaPlay, FaStop, FaThumbsUp, FaTrash, FaTrophy } from "react-icons/fa";
 
 import { DownloadProgress } from "../components/DownloadProgress";
 import {
   cancelDownload,
   checkUpdate,
+  gameAchievements,
   gameDescription,
   getCachedGenres,
   getCachedSteamReviews,
@@ -21,8 +22,8 @@ import {
 import { launchAppViaSteam, removeShortcutForApp, terminateSteamGame, watchGameLifetime } from "../steam";
 import { useOps } from "../hooks/useOps";
 import { getCachedGame, setCachedInstalled } from "../state/libraryCache";
-import { currentAppName, LIBRARY_ROUTE } from "../routes";
-import type { SavesStatus, SteamReview } from "../types";
+import { achievementsRoute, currentAppName, LIBRARY_ROUTE } from "../routes";
+import type { AchievementsResult, SavesStatus, SteamReview } from "../types";
 
 // Steam's review tiers, colour-coded the way the store does (blue = positive).
 function steamColor(pct: number): string {
@@ -57,6 +58,7 @@ export function GameDetailPage() {
   const [localizedName, setLocalizedName] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
+  const [achievements, setAchievements] = useState<AchievementsResult | null>(null);
 
   // Check for a newer Epic build whenever the game is installed.
   useEffect(() => {
@@ -125,6 +127,20 @@ export function GameDetailPage() {
       cancelled = true;
     };
   }, [appName, game?.title]);
+
+  // Epic achievements: localized catalog list + the user's unlock progress.
+  useEffect(() => {
+    if (!appName) return;
+    let cancelled = false;
+    void gameAchievements(appName)
+      .then((r) => {
+        if (!cancelled) setAchievements(r);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [appName]);
 
   const isThisDownloading =
     download?.app_name === appName && download.state === "downloading";
@@ -333,6 +349,14 @@ export function GameDetailPage() {
                 <FaTrash /> &nbsp;Uninstall
               </DialogButton>
             )}
+            {achievements && achievements.achievements.length > 0 && (
+              <DialogButton
+                onClick={() => Navigation.Navigate(achievementsRoute(appName))}
+                style={{ width: 220 }}
+              >
+                <FaTrophy /> &nbsp;Achievements {achievements.unlocked}/{achievements.total}
+              </DialogButton>
+            )}
           </Focusable>
           {installed && updateAvailable && (
             <div style={{ marginTop: 8, color: "#fbbf24", fontSize: 13 }}>
@@ -413,6 +437,7 @@ export function GameDetailPage() {
           )}
         </div>
       )}
+
     </Focusable>
     </ScrollPanelGroup>
   );

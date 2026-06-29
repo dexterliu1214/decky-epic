@@ -10,8 +10,9 @@ import { FaGamepad } from "react-icons/fa";
 
 import { LibraryPage } from "./pages/LibraryPage";
 import { GameDetailPage } from "./pages/GameDetailPage";
+import { AchievementsPage } from "./pages/AchievementsPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { GAME_ROUTE, LIBRARY_ROUTE, SETTINGS_ROUTE } from "./routes";
+import { ACHIEVEMENTS_ROUTE, GAME_ROUTE, LIBRARY_ROUTE, SETTINGS_ROUTE } from "./routes";
 import { subscribe } from "./api";
 import { syncShortcutForInstall } from "./steam";
 import { useAuth } from "./hooks/useAuth";
@@ -66,6 +67,7 @@ function QuickAccessPanel() {
 export default definePlugin(() => {
   routerHook.addRoute(LIBRARY_ROUTE, () => <LibraryPage />, { exact: true });
   routerHook.addRoute(GAME_ROUTE, () => <GameDetailPage />, { exact: true });
+  routerHook.addRoute(ACHIEVEMENTS_ROUTE, () => <AchievementsPage />, { exact: true });
   routerHook.addRoute(SETTINGS_ROUTE, () => <SettingsPage />, { exact: true });
 
   // Auto-register a Steam shortcut when a game finishes installing, so it shows
@@ -84,6 +86,7 @@ export default definePlugin(() => {
       offInstall();
       routerHook.removeRoute(LIBRARY_ROUTE);
       routerHook.removeRoute(GAME_ROUTE);
+      routerHook.removeRoute(ACHIEVEMENTS_ROUTE);
       routerHook.removeRoute(SETTINGS_ROUTE);
     },
   };

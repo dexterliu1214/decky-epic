@@ -21,6 +21,24 @@ export interface InstalledGame {
   install_size: number;
 }
 
+export interface Achievement {
+  name: string;
+  unlocked: boolean;
+  hidden: boolean;
+  title: string;
+  description: string;
+  icon: string | null;
+  xp: number | null;
+  rarity: number | null;
+  unlock_date: string | null;
+}
+
+export interface AchievementsResult {
+  total: number;
+  unlocked: number;
+  achievements: Achievement[];
+}
+
 export interface SteamReview {
   positive_pct: number | null;
   total_reviews: number | null;

@@ -196,6 +196,12 @@ class Plugin:
         return {"ok": bool(desc), "description": desc,
                 "name": info.get("title") or app_name, "source": "epic"}
 
+    async def game_achievements(self, app_name: str) -> dict:
+        """Localized Epic achievement list + the signed-in user's progress."""
+        if not self.core:
+            return {"total": 0, "unlocked": 0, "achievements": []}
+        return await self.core.achievements(app_name)
+
     # --- downloads -----------------------------------------------------------
     async def start_download(self, app_name: str, base_path: str = "", max_workers: int = 0) -> dict:
         if not self.downloads:

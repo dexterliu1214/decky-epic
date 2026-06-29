@@ -475,6 +475,78 @@ class EpicCore:
 
         return await self.run(_d)
 
+    # -- achievements --------------------------------------------------------
+    def _achievements_blocking(self, app_name: str) -> dict:
+        """Epic achievements for a game: the localized catalog list merged with
+        the signed-in user's unlock progress. Catalog text comes back in the
+        current locale (egs.language_code); the per-user record needs a login."""
+        empty = {"total": 0, "unlocked": 0, "achievements": []}
+        try:
+            g = self._core.get_game(app_name)
+            ns = (getattr(g, "metadata", {}) or {}).get("namespace")
+        except Exception:
+            ns = None
+        if not ns:
+            return empty
+
+        try:
+            data = self._core.egs.get_game_achievements(ns) or {}
+            rec = (((data.get("data") or {}).get("Achievement") or {})
+                   .get("productAchievementsRecordBySandbox") or {})
+        except Exception as e:
+            _log.warning("achievements fetch failed for %s: %r", app_name, e)
+            return empty
+        catalog = rec.get("achievements") or []
+        if not catalog:
+            return empty
+
+        # The user's unlock state, keyed by the internal achievement name. Best
+        # effort: a logged-out / data-less response just leaves everything locked.
+        progress: dict = {}
+        try:
+            udata = self._core.egs.get_game_achievements_user(ns) or {}
+            records = ((((udata.get("data") or {}).get("PlayerAchievement") or {})
+                        .get("playerAchievementGameRecordsBySandbox") or {}).get("records") or [])
+            for r in records:
+                for pa in (r.get("playerAchievements") or []):
+                    p = pa.get("playerAchievement") or {}
+                    name = p.get("achievementName")
+                    if name:
+                        progress[name] = p
+        except Exception as e:
+            _log.warning("user achievements fetch failed for %s: %r", app_name, e)
+
+        out = []
+        for item in catalog:
+            ac = item.get("achievement") or {}
+            name = ac.get("name")
+            p = progress.get(name) or {}
+            unlocked = bool(p.get("unlocked"))
+            # Hidden achievements stay masked until the user unlocks them.
+            masked = bool(ac.get("hidden")) and not unlocked
+            out.append({
+                "name": name,
+                "unlocked": unlocked,
+                "hidden": masked,
+                "title": ac.get("unlockedDisplayName") or "",
+                "description": "" if masked else (ac.get("unlockedDescription") or ""),
+                "icon": (ac.get("unlockedIconLink") if unlocked else ac.get("lockedIconLink"))
+                         or ac.get("unlockedIconLink"),
+                "xp": ac.get("XP"),
+                "rarity": (ac.get("rarity") or {}).get("percent"),
+                "unlock_date": p.get("unlockDate"),
+            })
+        # Unlocked first, then rarest-to-commonest so the showcase reads well.
+        out.sort(key=lambda a: (not a["unlocked"], a["rarity"] if a["rarity"] is not None else 101))
+        return {
+            "total": rec.get("totalAchievements") or len(out),
+            "unlocked": sum(1 for a in out if a["unlocked"]),
+            "achievements": out,
+        }
+
+    async def achievements(self, app_name: str) -> dict:
+        return await self.run(self._achievements_blocking, app_name)
+
     # -- tags (Epic Store offer tags) ----------------------------------------
     def _epic_genres(self, namespace: str) -> list:
         """Descriptive tag names from the Epic Store offers — genres plus thematic
