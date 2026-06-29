@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DialogButton, Dropdown, Field, Focusable, Navigation, TextField } from "@decky/ui";
+import { DialogButton, Dropdown, Field, Focusable, Navigation, ScrollPanelGroup, TextField } from "@decky/ui";
 import { toaster } from "@decky/api";
 
 import { openFilePicker } from "@decky/api";
@@ -71,7 +71,10 @@ export function SettingsPage() {
   };
 
   return (
-    <div style={{ padding: "40px 28px 28px", height: "100%", boxSizing: "border-box", overflowY: "scroll" }}>
+    // ScrollPanelGroup is Steam's native scroll container — the right stick and
+    // focus-driven scrolling both work inside it (a plain div won't scroll to the end).
+    <ScrollPanelGroup {...({ focusable: false, style: { height: "100%" } } as any)}>
+    <Focusable flow-children="vertical" style={{ marginTop: 40, padding: "0 28px 28px" }}>
       <DialogButton style={{ width: 120, marginBottom: 16 }} onClick={() => Navigation.Navigate(LIBRARY_ROUTE)}>
         ← Library
       </DialogButton>
@@ -142,6 +145,7 @@ export function SettingsPage() {
           </Field>
         )}
       </section>
-    </div>
+    </Focusable>
+    </ScrollPanelGroup>
   );
 }

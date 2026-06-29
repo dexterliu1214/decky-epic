@@ -121,9 +121,22 @@ _STORE_GRAPHQL = "https://store.epicgames.com/graphql"
 _STORE_CONTENT = "https://store-content.ak.epicgames.com/api/{locale}/content/products/{slug}"
 _SLUG_QUERY = ('query($ns:String!){Catalog{catalogNs(namespace:$ns){'
               'mappings(pageType:"productHome"){pageSlug}}}}')
-# Epic Store offer tags carry genres (groupName == "genre"), e.g. Action, RPG.
-_GENRE_QUERY = ('query($ns:String!){Catalog{catalogOffers(namespace:$ns,params:{count:1}){'
-                'elements{tags{name groupName}}}}}')
+# Epic Store offer tags. Beyond genres (Action, RPG) these include thematic tags
+# like Roguelike, Open World, Souls-like, etc. We pull several offers per
+# namespace and union their tags, since a single offer (e.g. a special edition)
+# can carry a thinner set.
+_TAGS_QUERY = ('query($ns:String!,$loc:String){Catalog{catalogOffers(namespace:$ns,locale:$loc,'
+               'params:{count:20}){elements{tags{name groupName}}}}}')
+# Bumped when the set of tags we extract changes, so old cache entries (e.g. the
+# previous genre-only data, or English tags from before localization) are
+# treated as stale and re-fetched automatically.
+_TAG_CACHE_VERSION = 3
+# Tag groups that aren't descriptive of the game itself — dropped from the filter.
+_TAG_GROUP_DENYLIST = {
+    "platform", "epicfeature", "subscription", "ageratingsystem",
+    # age-rating boards
+    "usk", "esrb", "pegi", "oflc", "grac", "cero", "rars", "classind", "dejus",
+}
 # Epic catalog locale -> Epic Store content locale.
 _STORE_LOCALE = {
     "en": "en-US", "zh-Hant": "zh-Hant", "zh-Hans": "zh-CN", "ja": "ja", "ko": "ko",
@@ -290,12 +303,17 @@ class EpicCore:
             _log.warning("could not write library cache: %r", e)
 
     async def library(self, force_refresh: bool = False) -> list[dict]:
-        if not force_refresh:
-            cached = self._read_library_cache()
-            if cached:
-                games = await self.run(self._overlay_installed_blocking, cached.get("games") or [])
-                return [g for g in games if _is_game(g)]
-        games = await self.run(self._fetch_library_blocking, False)
+        cached = self._read_library_cache()
+        # A cache written under a different locale carries wrong-language titles;
+        # treat it as a miss so we re-pull localized metadata from Epic.
+        locale_changed = bool(cached) and cached.get("locale") != self._locale
+        if not force_refresh and cached and not locale_changed:
+            games = await self.run(self._overlay_installed_blocking, cached.get("games") or [])
+            return [g for g in games if _is_game(g)]
+        # force_meta re-pulls each game's catalog metadata so titles come back in
+        # the current locale — needed on a manual refresh or a locale change,
+        # since legendary otherwise serves the metadata it cached on first sync.
+        games = await self.run(self._fetch_library_blocking, force_refresh or locale_changed)
         self._write_library_cache(games)
         return [g for g in games if _is_game(g)]
 
@@ -457,22 +475,30 @@ class EpicCore:
 
         return await self.run(_d)
 
-    # -- genres (Epic Store offer tags) --------------------------------------
+    # -- tags (Epic Store offer tags) ----------------------------------------
     def _epic_genres(self, namespace: str) -> list:
-        """Genre names from the Epic Store offer tags (groupName == 'genre')."""
+        """Descriptive tag names from the Epic Store offers — genres plus thematic
+        tags like Roguelike or Open World. Platform/rating/Epic-feature groups are
+        dropped, and tags are unioned across all of the namespace's offers."""
         try:
+            store_loc = _STORE_LOCALE.get(self._locale, "en-US")
             r = self._core.egs.session.get(
                 _STORE_GRAPHQL,
-                params={"query": _GENRE_QUERY, "variables": json.dumps({"ns": namespace})},
+                params={"query": _TAGS_QUERY,
+                        "variables": json.dumps({"ns": namespace, "loc": store_loc})},
                 timeout=10,
             )
             els = (((r.json().get("data") or {}).get("Catalog") or {}).get("catalogOffers") or {}).get("elements") or []
-            if not els:
-                return []
-            tags = els[0].get("tags") or []
-            return sorted({t.get("name") for t in tags if t.get("groupName") == "genre" and t.get("name")})
+            names = set()
+            for el in els:
+                for t in el.get("tags") or []:
+                    name = t.get("name")
+                    grp = (t.get("groupName") or "").lower()
+                    if name and grp not in _TAG_GROUP_DENYLIST:
+                        names.add(name)
+            return sorted(names)
         except Exception as e:
-            _log.warning("epic genres failed for %s: %r", namespace, e)
+            _log.warning("epic tags failed for %s: %r", namespace, e)
             return []
 
     def _genres_for_app(self, app_name: str) -> list:
@@ -514,12 +540,15 @@ class EpicCore:
         now = time.time()
         todo = [it for it in items
                 if force or it["app_name"] not in cache
+                or cache[it["app_name"]].get("v") != _TAG_CACHE_VERSION
+                or cache[it["app_name"]].get("loc") != self._locale
                 or (now - (cache[it["app_name"]].get("fetched_at") or 0) > ttl)]
         done = 0
         for it in todo:
             app = it["app_name"]
             genres = await self.run(self._genres_for_app, app)
-            cache[app] = {"genres": genres, "fetched_at": time.time()}
+            cache[app] = {"genres": genres, "fetched_at": time.time(),
+                          "v": _TAG_CACHE_VERSION, "loc": self._locale}
             done += 1
             if done % 20 == 0:
                 self._write_genre_cache(cache)

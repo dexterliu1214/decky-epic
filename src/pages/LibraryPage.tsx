@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DialogButton, Dropdown, Focusable, Navigation, Spinner, TextField } from "@decky/ui";
+import { DialogButton, Dropdown, Focusable, Navigation, ScrollPanelGroup, Spinner, TextField } from "@decky/ui";
 import { FaCog, FaSyncAlt } from "react-icons/fa";
 
 import { GameCard } from "../components/GameCard";
@@ -65,7 +65,12 @@ export function LibraryPage() {
   const [genre, setGenre] = useState(savedGenre);
   // Bumped when sort/genre changes to pull gamepad focus back to the top card.
   const [focusTopSignal, setFocusTopSignal] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // ScrollPanelGroup is Steam's native scroll container, so the element that
+  // actually scrolls is one it renders internally — not a div we own. A sentinel
+  // at the top of the content lets us walk up to that scrolling ancestor and keep
+  // the save/restore-on-navigation behaviour working.
+  const scrollRef = useRef<HTMLElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   // Capture the focus target once at mount so it doesn't shift as the user
   // moves focus around after we've restored it.
   const focusOnMount = useRef(savedFocusApp).current;
@@ -76,6 +81,24 @@ export function LibraryPage() {
     savedQuery = query;
     savedGenre = genre;
   }, [sort, query, genre]);
+
+  // Resolve the actual scrolling element created by ScrollPanelGroup (the nearest
+  // ancestor that overflows) and persist its scrollTop as the user scrolls.
+  useEffect(() => {
+    let node: HTMLElement | null = sentinelRef.current?.parentElement ?? null;
+    while (node) {
+      const oy = getComputedStyle(node).overflowY;
+      if (oy === "auto" || oy === "scroll") break;
+      node = node.parentElement;
+    }
+    scrollRef.current = node;
+    if (!node) return;
+    const onScroll = () => {
+      savedScrollTop = node!.scrollTop;
+    };
+    node.addEventListener("scroll", onScroll, { passive: true });
+    return () => node!.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Restore the saved scroll position once the grid has rendered. Cards are a
   // fixed size, so the layout height is stable even before cover images load.
@@ -126,13 +149,11 @@ export function LibraryPage() {
   const loggedIn = auth?.logged_in;
 
   return (
-    <div
-      ref={scrollRef}
-      onScroll={(e) => {
-        savedScrollTop = e.currentTarget.scrollTop;
-      }}
-      style={{ padding: "40px 28px 28px", height: "100%", boxSizing: "border-box", overflowY: "scroll" }}
-    >
+    // ScrollPanelGroup is Steam's native scroll container — the right stick and
+    // focus-driven scrolling both work inside it (a plain div won't scroll to the end).
+    <ScrollPanelGroup {...({ focusable: false, style: { height: "100%" } } as any)}>
+    <Focusable flow-children="vertical" style={{ padding: "40px 28px 80px" }}>
+      <div ref={sentinelRef} style={{ height: 0 }} />
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <h1 style={{ margin: 0, fontSize: 26 }}>Epic Library</h1>
         <div style={{ flex: 1 }} />
@@ -177,12 +198,12 @@ export function LibraryPage() {
           <div style={{ minWidth: 180 }}>
             <Dropdown
               rgOptions={[
-                { data: "", label: "All genres" },
+                { data: "", label: "All tags" },
                 ...allGenres.map((gn) => ({ data: gn, label: gn })),
               ]}
               selectedOption={genre}
               onChange={(o) => onGenreChange(o.data as string)}
-              strDefaultLabel="Genre"
+              strDefaultLabel="Tag"
             />
           </div>
         )}
@@ -254,6 +275,7 @@ export function LibraryPage() {
       {!loading && visible.length === 0 && loggedIn && (
         <div style={{ opacity: 0.7, padding: 24 }}>No games found.</div>
       )}
-    </div>
+    </Focusable>
+    </ScrollPanelGroup>
   );
 }
