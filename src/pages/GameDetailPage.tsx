@@ -8,7 +8,9 @@ import {
   cancelDownload,
   checkUpdate,
   gameDescription,
+  getCachedGenres,
   getCachedSteamReviews,
+  refreshGenres,
   refreshSteamReviews,
   savesStatus,
   startDownload,
@@ -54,6 +56,7 @@ export function GameDetailPage() {
   const [description, setDescription] = useState<string | null>(null);
   const [localizedName, setLocalizedName] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
 
   // Check for a newer Epic build whenever the game is installed.
   useEffect(() => {
@@ -96,6 +99,32 @@ export function GameDetailPage() {
       })
       .catch(() => undefined);
   }, [appName]);
+
+  // Epic Store tags (genres + thematic), localized to the preferred language.
+  // The library load usually warms this cache; if we arrived here directly it
+  // may be empty, so fetch just this game and re-read.
+  useEffect(() => {
+    if (!appName) return;
+    let cancelled = false;
+    void getCachedGenres([appName])
+      .then((m) => {
+        if (cancelled) return;
+        const t = m[appName] ?? [];
+        setTags(t);
+        if (t.length === 0 && game?.title) {
+          void refreshGenres([{ app_name: appName, title: game.title }], false)
+            .then(() => getCachedGenres([appName]))
+            .then((m2) => {
+              if (!cancelled) setTags(m2[appName] ?? []);
+            })
+            .catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [appName, game?.title]);
 
   const isThisDownloading =
     download?.app_name === appName && download.state === "downloading";
@@ -312,6 +341,29 @@ export function GameDetailPage() {
           )}
         </div>
       </Focusable>
+
+      {tags.length > 0 && (
+        <Focusable
+          onActivate={() => undefined}
+          style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 18, maxWidth: 900 }}
+        >
+          {tags.map((t) => (
+            <span
+              key={t}
+              style={{
+                padding: "4px 12px",
+                background: "#1a1d23",
+                borderRadius: 999,
+                fontSize: 13,
+                opacity: 0.9,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t}
+            </span>
+          ))}
+        </Focusable>
+      )}
 
       {description && (
         <Focusable
