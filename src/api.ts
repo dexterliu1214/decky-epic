@@ -45,9 +45,10 @@ export const refreshGenres =
     "refresh_genres",
   );
 export const gameDescription =
-  callable<[string], { ok: boolean; description?: string; name?: string; source?: "steam" | "epic" }>(
-    "game_description",
-  );
+  callable<
+    [string],
+    { ok: boolean; description?: string; long_description?: string; name?: string; source?: "steam" | "epic" }
+  >("game_description");
 export const gameAchievements = callable<[string], AchievementsResult>("game_achievements");
 
 // --- downloads -------------------------------------------------------------

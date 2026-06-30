@@ -55,6 +55,7 @@ export function GameDetailPage() {
   const [steamRunning, setSteamRunning] = useState(false);
   const [steamReview, setSteamReview] = useState<SteamReview | null>(null);
   const [description, setDescription] = useState<string | null>(null);
+  const [longDescription, setLongDescription] = useState<string | null>(null);
   const [localizedName, setLocalizedName] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
@@ -97,6 +98,7 @@ export function GameDetailPage() {
     void gameDescription(appName)
       .then((r) => {
         setDescription(r.ok ? r.description ?? null : null);
+        setLongDescription(r.ok ? r.long_description ?? null : null);
         setLocalizedName(r.ok ? r.name ?? null : null);
       })
       .catch(() => undefined);
@@ -396,6 +398,17 @@ export function GameDetailPage() {
           style={{ marginTop: 22, fontSize: 15, lineHeight: 1.6, opacity: 0.9, maxWidth: 900 }}
         >
           {description}
+        </Focusable>
+      )}
+
+      {longDescription && (
+        <Focusable onActivate={() => undefined} style={{ marginTop: 18, maxWidth: 900 }}>
+          {/* The backend normalizes Epic's long description to HTML (real HTML is
+              passed through; their marker/markdown dialect is converted). */}
+          <div
+            style={{ fontSize: 14, lineHeight: 1.6, opacity: 0.85 }}
+            dangerouslySetInnerHTML={{ __html: longDescription }}
+          />
         </Focusable>
       )}
 

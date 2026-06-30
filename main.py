@@ -188,12 +188,14 @@ class Plugin:
 
     async def game_description(self, app_name: str) -> dict:
         """Localized title + synopsis for the detail page, entirely from Epic
-        (catalog title + Epic Store front-end synopsis). No Steam."""
+        (catalog title + Epic Store front-end synopsis). No Steam. The raw long
+        description (may contain HTML) is returned for the UI to render as-is."""
         if not self.core:
-            return {"ok": False, "description": "", "name": app_name, "source": "epic"}
+            return {"ok": False, "description": "", "long_description": "", "name": app_name, "source": "epic"}
         info = await self.core.description(app_name)
         desc = info.get("description") or ""
-        return {"ok": bool(desc), "description": desc,
+        long_desc = info.get("long_description") or ""
+        return {"ok": bool(desc or long_desc), "description": desc, "long_description": long_desc,
                 "name": info.get("title") or app_name, "source": "epic"}
 
     async def game_achievements(self, app_name: str) -> dict:

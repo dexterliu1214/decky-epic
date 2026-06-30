@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import html as _html
 import json
 import logging
 import re
@@ -121,6 +122,11 @@ _STORE_GRAPHQL = "https://store.epicgames.com/graphql"
 _STORE_CONTENT = "https://store-content.ak.epicgames.com/api/{locale}/content/products/{slug}"
 _SLUG_QUERY = ('query($ns:String!){Catalog{catalogNs(namespace:$ns){'
               'mappings(pageType:"productHome"){pageSlug}}}}')
+# The official store synopsis, localized: the catalogOffers `description` is the
+# exact marketing copy shown on store.epicgames.com. We pull the namespace's
+# offers and prefer the BASE_GAME one (add-ons describe only the DLC).
+_OFFER_DESC_QUERY = ('query($ns:String!,$loc:String){Catalog{catalogOffers(namespace:$ns,locale:$loc,'
+                     'params:{count:20}){elements{title description longDescription offerType}}}}')
 # Epic Store offer tags. Beyond genres (Action, RPG) these include thematic tags
 # like Roguelike, Open World, Souls-like, etc. We pull several offers per
 # namespace and union their tags, since a single offer (e.g. a special edition)
@@ -153,6 +159,101 @@ def _strip_markup(text: Optional[str]) -> str:
     t = re.sub(r"(?m)^#{1,6}\s*", "", t)  # markdown headings
     t = re.sub(r"\n{3,}", "\n\n", t)
     return t.strip()
+
+
+def _md_inline(s: str) -> str:
+    """Inline markdown -> HTML on escaped text (so stray ``<`` can't inject):
+    images, links, inline code, bold and italic."""
+    s = _html.escape(s)
+    # Images (![alt](url)) before links, since they share the [..](..) shape.
+    s = re.sub(r"!\[([^\]]*)\]\((https?://[^)\s]+)\)",
+               r'<img src="\2" alt="\1" style="max-width:100%;border-radius:8px" />', s)
+    s = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', s)
+    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+    s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
+    s = re.sub(r"__(.+?)__", r"<strong>\1</strong>", s)
+    s = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<em>\1</em>", s)
+    s = re.sub(r"(?<!_)_(?!_)(.+?)(?<!_)_(?!_)", r"<em>\1</em>", s)
+    return s
+
+
+def _md_to_html(t: str) -> str:
+    """Convert standard markdown block syntax to HTML: ATX headings (``#``..
+    ``######``), unordered (``-``/``*``/``+``) and ordered (``1.``) lists,
+    blockquotes (``>``), horizontal rules, and blank-line-separated paragraphs.
+    Inline formatting is applied per line via :func:`_md_inline`."""
+    out: list = []
+    para: list = []
+    items: list = []        # pending list items
+    list_tag = ""           # "ul" or "ol" for the pending list
+    quote: list = []        # pending blockquote lines
+
+    def flush_para():
+        if para:
+            out.append("<p>" + "<br>".join(_md_inline(x) for x in para) + "</p>")
+            para.clear()
+
+    def flush_list():
+        nonlocal list_tag
+        if items:
+            out.append(f"<{list_tag}>" + "".join(f"<li>{_md_inline(x)}</li>" for x in items)
+                       + f"</{list_tag}>")
+            items.clear()
+            list_tag = ""
+
+    def flush_quote():
+        if quote:
+            out.append("<blockquote>" + "<br>".join(_md_inline(x) for x in quote) + "</blockquote>")
+            quote.clear()
+
+    def flush_all():
+        flush_para(); flush_list(); flush_quote()
+
+    for raw in t.split("\n"):
+        line = raw.strip()
+        if not line:
+            flush_all(); continue
+        if re.match(r"^(-{3,}|\*{3,}|_{3,})$", line):           # horizontal rule
+            flush_all(); out.append("<hr />")
+        elif m := re.match(r"^(#{1,6})\s+(.*)$", line):         # heading
+            flush_all()
+            lvl = min(len(m.group(1)) + 1, 6)                   # # -> h2, ## -> h3, ...
+            out.append(f"<h{lvl}>{_md_inline(m.group(2))}</h{lvl}>")
+        elif m := re.match(r"^>\s?(.*)$", line):                # blockquote
+            flush_para(); flush_list()
+            quote.append(m.group(1))
+        elif m := re.match(r"^[-*+]\s+(.*)$", line):            # unordered list
+            flush_para(); flush_quote()
+            if list_tag != "ul":
+                flush_list(); list_tag = "ul"
+            items.append(m.group(1))
+        elif m := re.match(r"^\d+\.\s+(.*)$", line):            # ordered list
+            flush_para(); flush_quote()
+            if list_tag != "ol":
+                flush_list(); list_tag = "ol"
+            items.append(m.group(1))
+        else:                                                  # paragraph text
+            flush_list(); flush_quote()
+            para.append(line)
+    flush_all()
+    return "".join(out)
+
+
+def _long_description_html(text: Optional[str]) -> str:
+    """Normalize Epic's long description to HTML for direct rendering. Epic ships
+    it in two flavours: real HTML (passed through untouched) and a marker/markdown
+    dialect (``<!--textBlock-->``, ``# heading``, ``- bullet``) which we convert
+    so it renders properly instead of showing literal ``#`` and run-together lines."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    has_markers = "<!--" in t
+    has_md = bool(re.search(r"(?m)^\s*(#{1,6}\s|[-*+]\s|>\s|\d+\.\s)", t)) or "![" in t
+    has_real_html = bool(re.search(r"</?(p|div|ul|ol|li|h[1-6]|strong|em|br|span|a|img)\b", t, re.I))
+    # Genuine HTML that isn't Epic's marker dialect: render as-is.
+    if has_real_html and not has_markers and not has_md:
+        return t
+    return _md_to_html(re.sub(r"<!--.*?-->", "", t, flags=re.S))
 
 
 class EpicCore:
@@ -429,11 +530,40 @@ class EpicCore:
             _log.warning("store content fetch failed (%s/%s): %r", store_locale, slug, e)
             return None
 
+    def _store_offer(self, namespace: str, store_locale: str) -> tuple:
+        """The official store copy from catalogOffers, localized: a (short
+        synopsis, raw long description) pair. The short synopsis is plain-texted;
+        the long description keeps its original markup (it may contain HTML) so
+        the UI can render it as-is. Prefer the BASE_GAME offer; fall back to the
+        first offer that has a short description."""
+        try:
+            r = self._core.egs.session.get(
+                _STORE_GRAPHQL,
+                params={"query": _OFFER_DESC_QUERY,
+                        "variables": json.dumps({"ns": namespace, "loc": store_locale})},
+                timeout=10,
+            )
+            els = (((r.json().get("data") or {}).get("Catalog") or {})
+                   .get("catalogOffers") or {}).get("elements") or []
+            base = next((e for e in els if e.get("offerType") == "BASE_GAME"
+                         and (e.get("description") or "").strip()), None)
+            chosen = base or next((e for e in els if (e.get("description") or "").strip()), None)
+            if not chosen:
+                return "", ""
+            short = _strip_markup(chosen.get("description")) or ""
+            long_raw = (chosen.get("longDescription") or "").strip()
+            return short, long_raw
+        except Exception as e:
+            _log.warning("store offer fetch failed (%s/%s): %r", store_locale, namespace, e)
+            return "", ""
+
     async def description(self, app_name: str) -> dict:
-        """Localized title + synopsis, entirely from Epic. Use the catalog's own
-        localized description when it has a real one (~25% of titles); for the
-        rest — where the catalog just echoes the title — pull the synopsis from
-        the Epic Store front-end (localized, English fallback)."""
+        """Localized title + synopsis, entirely from Epic. The synopsis is taken
+        from the Epic Store front-end (store.epicgames.com) so the detail page
+        shows the real marketing copy users see on the store, localized with an
+        English fallback. The catalog synopsis / longDescription are only used as
+        fallbacks when the store has nothing. The title still comes from the
+        catalog (its localized title)."""
         def _real(d: Optional[str], title: str) -> bool:
             d = (d or "").strip()
             return bool(d) and d.lower() != title.strip().lower()
@@ -447,14 +577,27 @@ class EpicCore:
             title = md.get("title") or app_name
             ns, cid = md.get("namespace"), md.get("id")
 
-            desc = ""
+            # Localized title (and a catalog synopsis kept only as a fallback).
+            catalog_desc = ""
             if ns and cid:
                 loc_title, loc_desc = self._catalog_text(ns, cid, self._locale)
                 title = loc_title or title
                 if _real(loc_desc, title):
-                    desc = loc_desc.strip()
+                    catalog_desc = loc_desc.strip()
 
-            # Catalog had only the title — get the real synopsis from the Store.
+            # Primary synopsis: the official Epic Store copy (catalogOffers),
+            # localized with an English fallback. Also grab the raw long
+            # description (kept as-is — it may contain HTML the UI renders).
+            desc = ""
+            long_desc = ""
+            if ns:
+                store_loc = _STORE_LOCALE.get(self._locale, "en-US")
+                desc, long_desc = self._store_offer(ns, store_loc)
+                if not desc and not long_desc and store_loc != "en-US":
+                    desc, long_desc = self._store_offer(ns, "en-US")
+
+            # Secondary: the store-content product page (older API), if the
+            # storefront offers had no description.
             if not desc and ns:
                 slug = self._store_slug(ns)
                 if slug:
@@ -463,7 +606,9 @@ class EpicCore:
                     if not desc and store_loc != "en-US":
                         desc = self._store_description(slug, "en-US") or ""
 
-            # Last resort: English catalog text, then the cleaned longDescription.
+            # Fallbacks: localized catalog synopsis, English catalog, longDescription.
+            if not desc:
+                desc = catalog_desc
             if not desc and ns and cid and self._locale != "en":
                 en_title, en_desc = self._catalog_text(ns, cid, "en")
                 if _real(en_desc, en_title or title):
@@ -471,7 +616,14 @@ class EpicCore:
             if not desc:
                 desc = _strip_markup(md.get("longDescription"))
 
-            return {"title": title, "description": desc}
+            # Long description for the detail page: prefer the store's, else the
+            # catalog metadata's. Normalize to HTML — pass real HTML through, but
+            # convert Epic's marker/markdown dialect so it renders properly.
+            if not long_desc:
+                long_desc = md.get("longDescription") or ""
+
+            return {"title": title, "description": desc,
+                    "long_description": _long_description_html(long_desc)}
 
         return await self.run(_d)
 
